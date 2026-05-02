@@ -9,6 +9,7 @@
 // test runs without the Vision Dev's files.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MARA_KNOWN_BAD_FEW_SHOTS } from "@/lib/forge/personas/__fixtures__/known-bad";
+import { withForgeRunContext } from "@/lib/tracing/als";
 import type { ShotList } from "@/lib/forge/shotList";
 import type { Critique } from "@/lib/forge/critique";
 
@@ -199,6 +200,10 @@ describe("Mara — Devil's Advocate (16 known-bad few-shots)", () => {
         arkChat: arkMock,
         arkVision: vi.fn(),
       }));
+      vi.doMock("@/lib/seed/zai", () => ({
+        zaiChat: arkMock,
+        zaiVision: vi.fn(),
+      }));
 
       const { invoke } = await import("@/lib/forge/personas/mara");
       const shotList = buildShotListWith(
@@ -207,7 +212,10 @@ describe("Mara — Devil's Advocate (16 known-bad few-shots)", () => {
         fx.citationsHint,
       );
 
-      const critiques = await invoke({ shotList });
+      const critiques = await withForgeRunContext(
+        `test-mara-${fx.shotId}-${fx.expectedCategory}`,
+        () => invoke({ shotList }),
+      );
 
       expect(critiques.length).toBeGreaterThanOrEqual(1);
       const matches = critiques.filter(

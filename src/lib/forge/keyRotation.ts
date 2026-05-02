@@ -11,6 +11,7 @@
 
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
+import { logger } from "@/lib/logging/logger";
 
 export type Provider = "ark" | "seedance" | "zai";
 
@@ -215,6 +216,18 @@ export function rotate(provider: Provider, reason: RotationReason): void {
   }
   s.index = (s.index + 1) % s.keys.length;
   debouncedPersist();
+  logger.event({
+    event: "key_rotated",
+    fn: "keyRotation.rotate",
+    msg: `key rotated provider=${provider} reason=${reason}`,
+    meta: {
+      provider,
+      reason,
+      from_index: failedIdx,
+      to_index: s.index,
+      cooldown_ms: cooldownMs,
+    },
+  });
 }
 
 /** Test helper — force re-read of env keys. */

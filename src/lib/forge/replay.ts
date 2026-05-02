@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { getCurrentForgeRunId } from "@/lib/tracing/als";
+import { logger } from "@/lib/logging/logger";
 import type { DemoMode } from "@/lib/forge/types";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -279,14 +280,56 @@ export async function withReplay<T>(opts: WithReplayOpts<T>): Promise<T> {
     opts.codec,
   );
 
+  const log = logger.child({ stage: opts.stage, fn: "withReplay" });
+  const t0 = Date.now();
+  log.event({
+    event: "fn_entry",
+    stage: opts.stage,
+    fn: "withReplay",
+    msg: `withReplay ${opts.stage} mode=${mode}`,
+    meta: { key: opts.key, codec: opts.codec, mode },
+  });
+
   if (mode === "replay") {
-    return load<T>(primary, sidecar, opts.codec, opts.stage, opts.key);
+    try {
+      const cached = await load<T>(
+        primary,
+        sidecar,
+        opts.codec,
+        opts.stage,
+        opts.key,
+      );
+      log.event({
+        event: "cache_hit",
+        stage: opts.stage,
+        fn: "withReplay",
+        duration_ms: Date.now() - t0,
+        meta: { key: opts.key, codec: opts.codec, path: primary },
+      });
+      return cached;
+    } catch (err) {
+      log.event({
+        event: "cache_miss",
+        stage: opts.stage,
+        fn: "withReplay",
+        duration_ms: Date.now() - t0,
+        meta: { key: opts.key, codec: opts.codec, path: primary },
+      });
+      log.fnError("withReplay", err, Date.now() - t0);
+      throw err;
+    }
   }
 
   if (mode === "live") {
-    const result = await opts.live();
-    await persist(primary, sidecar, opts.codec, result);
-    return result;
+    try {
+      const result = await opts.live();
+      await persist(primary, sidecar, opts.codec, result);
+      log.fnExit("withReplay", Date.now() - t0);
+      return result;
+    } catch (err) {
+      log.fnError("withReplay", err, Date.now() - t0);
+      throw err;
+    }
   }
 
   // hybrid: race live vs timeout, fall back to cached on timeout/quota/5xx
@@ -296,23 +339,41 @@ export async function withReplay<T>(opts: WithReplayOpts<T>): Promise<T> {
     const result = await Promise.race([opts.live(), timer]);
     timer.cancel();
     await persist(primary, sidecar, opts.codec, result);
+    log.fnExit("withReplay", Date.now() - t0);
     return result;
   } catch (err) {
     timer.cancel();
     if (isFallbackEligible(err)) {
+      log.event({
+        event: "retry",
+        stage: opts.stage,
+        fn: "withReplay",
+        msg: "hybrid live failed; falling back to replay",
+        meta: { reason: (err as Error)?.name ?? "unknown" },
+      });
       try {
-        return await load<T>(
+        const cached = await load<T>(
           primary,
           sidecar,
           opts.codec,
           opts.stage,
           opts.key,
         );
+        log.event({
+          event: "cache_hit",
+          stage: opts.stage,
+          fn: "withReplay",
+          duration_ms: Date.now() - t0,
+          meta: { key: opts.key, codec: opts.codec, fallback: true },
+        });
+        return cached;
       } catch (cacheErr) {
+        log.fnError("withReplay", cacheErr, Date.now() - t0);
         if (cacheErr instanceof MissingFixtureError) throw err;
         throw cacheErr;
       }
     }
+    log.fnError("withReplay", err, Date.now() - t0);
     throw err;
   }
 }

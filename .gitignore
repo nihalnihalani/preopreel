@@ -37,3 +37,9 @@ test-results/
 # Backup video binary stays committed (5 PM rule); fingerprint stays committed
 !docs/demo-backup.mp4
 !docs/demo-backup.fingerprint.json
+
+# runtime logs (per-forge-run NDJSON, transient)
+data/logs/
+
+# omc tooling state
+.omc/

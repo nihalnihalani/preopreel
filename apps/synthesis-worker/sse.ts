@@ -8,6 +8,7 @@
 // /api/forge/{id}/stream route consumes the stream and pipes to EventSource.
 
 import Redis from "ioredis";
+import { logger } from "@/lib/logging/logger";
 
 export interface TraceEvent {
   forge_run_id: string;
@@ -62,13 +63,21 @@ export async function emitTrace(opts: EmitOpts): Promise<void> {
     ...(opts.persona !== undefined && { persona: opts.persona }),
     ...(opts.data !== undefined && { data: opts.data }),
   };
+  // Mirror to the structured logger so SSE + log file stay aligned.
+  logger.event({
+    event: "sse_emit",
+    stage: opts.stage,
+    ...(opts.persona && { persona: opts.persona }),
+    msg: opts.message,
+    ...(opts.duration_ms !== undefined && { duration_ms: opts.duration_ms }),
+    meta: { version: event.version, ...(opts.data && { data: opts.data }) },
+  });
   try {
     const stream = `pre:trace:${opts.forgeRunId}`;
     await getRedis().xadd(stream, "*", "event", JSON.stringify(event));
     await getRedis().expire(stream, 3600);
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn("[sse] trace emit failed (best-effort)", err);
+    logger.warn("sse trace emit failed (best-effort)", { err: String(err) });
   }
 }
 

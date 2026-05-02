@@ -11,6 +11,7 @@
 import { z } from "zod";
 import type { Citation } from "@/lib/forge/types";
 import { Citation as CitationSchema } from "@/lib/forge/types";
+import { logger, withLogging } from "@/lib/logging/logger";
 
 // ─── POLICY (verbatim, plan 03 §B.5) ──────────────────────────────
 // Stored as a const so build-time subagents and runtime tooling read
@@ -203,6 +204,15 @@ export interface TavilyRawResponse {
  * persona module is the policy boundary + cache layer.
  */
 export async function invoke(input: TaviInvokeInput): Promise<Citation[]> {
+  return withLogging(
+    logger.child({ persona: "tavi", stage: "02-research" }),
+    "tavi.invoke",
+    () => _invoke(input),
+    { intent: input.query?.intent },
+  );
+}
+
+async function _invoke(input: TaviInvokeInput): Promise<Citation[]> {
   const validated = TaviQuery.parse(input.query);
   const cacheKey = await tavilyCacheKey(validated);
 

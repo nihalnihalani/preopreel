@@ -8,6 +8,7 @@
 // Output: StyleReference[] (URLs + thumbnails). NEVER a Citation —
 // Exa drives Seedream visual style, never narration provenance.
 import { z } from "zod";
+import { logger, withLogging } from "@/lib/logging/logger";
 
 // ─── POLICY (verbatim, plan 03 §B.6) ──────────────────────────────
 export const SYSTEM_PROMPT = `Exa — Neural Search Researcher Policy
@@ -187,6 +188,14 @@ export interface ExaRawResponse {
  * Never produces a Citation; results are visual style refs only.
  */
 export async function invoke(input: ExaInvokeInput): Promise<StyleReference[]> {
+  return withLogging(
+    logger.child({ persona: "exa", stage: "02-research" }),
+    "exa.invoke",
+    () => _invoke(input),
+  );
+}
+
+async function _invoke(input: ExaInvokeInput): Promise<StyleReference[]> {
   const validated = ExaQuery.parse(input.query);
   const cacheKey = await exaCacheKey(validated);
 

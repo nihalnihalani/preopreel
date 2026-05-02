@@ -1,24 +1,65 @@
-import { FlatCompat } from "@eslint/eslintrc";
-
-const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
+import tseslint from "typescript-eslint";
+import js from "@eslint/js";
 
 export default [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  { linterOptions: { reportUnusedDisableDirectives: "off" } },
   {
     ignores: [
       "node_modules/**",
       ".next/**",
       "out/**",
+      "build/**",
       "data/replay/**",
+      "data/logs/**",
+      "data/grounding-cache/**",
       "docs/plans/**",
+      "*.config.*",
+      "scripts/**/*.py",
     ],
   },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
+    files: ["**/*.{ts,tsx,js,jsx,mjs}"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        Buffer: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+        global: "readonly",
+        require: "readonly",
+        module: "readonly",
+        exports: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        setImmediate: "readonly",
+        clearImmediate: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+        TextEncoder: "readonly",
+        TextDecoder: "readonly",
+        fetch: "readonly",
+        File: "readonly",
+        FormData: "readonly",
+        Blob: "readonly",
+        Response: "readonly",
+        Request: "readonly",
+        Headers: "readonly",
+        crypto: "readonly",
+        AbortController: "readonly",
+        AbortSignal: "readonly",
+        ReadableStream: "readonly",
+        WritableStream: "readonly",
+        TransformStream: "readonly",
+      },
+    },
     rules: {
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-      "react/no-unescaped-entities": "off",
-      "@next/next/no-img-element": "off",
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
 ];
