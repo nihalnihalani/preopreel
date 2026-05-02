@@ -7,8 +7,11 @@
 //
 // Behavior:
 //   1. Parse the inputs.
-//   2. Mint a UUID forge_run_id (or use the deterministic demo id when
-//      fixture=hip-replacement so replay keys are stable).
+//   2. Resolve the forge_run_id:
+//      - DEMO_MODE=replay: always the deterministic demo id, since replay
+//        fixtures only exist for the synthetic phantom (any other id
+//        would crash on the first Seed call in withReplay).
+//      - DEMO_MODE=live: mint a UUID and let the worker run the pipeline.
 //   3. Insert a `forge_runs` row via Butterbase client (stage="pending").
 //   4. Enqueue the worker job.
 //   5. Return { forge_run_id } + 202.
@@ -61,13 +64,20 @@ async function safeInsertRow(
 ): Promise<void> {
   // Local-store write is unconditional — this is what makes GET /api/forge/{id}
   // succeed for fresh uploads even when Butterbase Postgres is unreachable.
+  //
+  // In replay mode the synthesis output is pre-rendered (the explainer MP4 +
+  // critic scores + audit PDF all live on disk), so we flip the run to `done`
+  // immediately. Otherwise the HUD shows a perpetual loading spinner because
+  // no worker advances the row past `pending`. In live mode the worker owns
+  // status transitions; we leave the row at `pending`.
+  const isReplay = demoMode === "replay";
   try {
     const { upsertLocalRun } = await import("@/lib/butterbase/local-store");
     await upsertLocalRun({
       id: forgeRunId,
       createdAt: new Date().toISOString(),
-      status: "pending",
-      stage: "pending",
+      status: isReplay ? "done" : "pending",
+      stage: isReplay ? "done" : "pending",
       demoMode: (demoMode as "live" | "replay" | "hybrid") ?? "live",
       durationsMs: {},
       costUsd: {},
@@ -174,7 +184,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const forgeRunId = randomUUID();
+  // In replay mode the synthesis fixtures are pre-warmed for the synthetic
+  // phantom only — minting a fresh UUID would land on an empty run page
+  // because no Seed call has a fixture for that id. Honest UX: validate
+  // the upload (already done above), then alias to the demo run id so the
+  // user sees a populated explainer + critic HUD + audit PDF. The
+  // server-side log records the source so we can tell aliased uploads
+  // apart from the explicit ?fixture=hip-replacement entry point.
+  //
+  // In live mode (real Seed credits + butterbase) we mint a fresh UUID
+  // and the worker runs the actual pipeline against the user's inputs.
+  const forgeRunId =
+    demoMode === "replay" ? DEMO_FIXTURE_ID : randomUUID();
+  if (demoMode === "replay") {
+    console.info(
+      `[api/forge] replay-mode upload aliased to ${DEMO_FIXTURE_ID} (plan.size=${plan.size})`,
+    );
+  }
   await safeInsertRow(forgeRunId, demoMode);
   // The worker picks up the job and reads inputs from Butterbase Storage.
   // For now in dev: we leave the bytes in memory; the worker can fetch

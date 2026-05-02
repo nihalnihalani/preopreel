@@ -1,0 +1,33 @@
+{
+  "forge_run_id": "demo-hip-replacement",
+  "persona": "mara",
+  "round": 1,
+  "round_cap": 1,
+  "critiques": [
+    {
+      "shot_id": "shot_4",
+      "severity": "warn",
+      "category": "advice_creep",
+      "excerpt": "you should expect the joint to feel different at first",
+      "reason": "Narrator line uses 'you should expect' — predictive imperative crosses from explaining the surgeon's plan into setting patient expectations not anchored to a cited source.",
+      "suggested_revision": "Your surgeon will discuss what to expect after the procedure as part of post-op care.",
+      "source_pointer_required": "§5.4 OR PMID with patient-experience evidence"
+    }
+  ],
+  "summary": {
+    "total_critiques": 1,
+    "by_severity": { "block": 0, "warn": 1, "info": 0 },
+    "by_category": {
+      "advice_creep": 1,
+      "uncited_claim": 0,
+      "ambiguity": 0,
+      "scope_creep": 0,
+      "anatomical_invention": 0,
+      "population_assumption": 0,
+      "imperative_overreach": 0,
+      "cited_but_irrelevant": 0
+    },
+    "approved": true,
+    "applied_revision_to": ["shot_4"]
+  }
+}

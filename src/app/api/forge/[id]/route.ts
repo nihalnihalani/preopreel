@@ -89,15 +89,19 @@ export async function GET(
   if (!run) run = await fetchFromReplay(id);
 
   if (!run) {
-    // For the demo fixture id, fabricate a minimal "pending" row so the
-    // UI can render its skeleton. The SSE stream + critique/critic
-    // endpoints will populate it from replay fixtures.
+    // For the demo fixture id, fabricate a row so the UI can render. In
+    // replay mode all synthesis output is pre-cached (explainer MP4 +
+    // critic scores + audit PDF), so the run is effectively `done` —
+    // surface that to the HUD so it skips its loading skeleton. In live
+    // mode the worker owns status; default to `pending` until it advances.
     if (id === "demo-hip-replacement") {
+      const isReplay = (process.env.DEMO_MODE ?? "live") === "replay";
+      const status: ForgeRunStatus = isReplay ? "done" : "pending";
       run = {
         id,
         createdAt: new Date().toISOString(),
-        status: "pending" as ForgeRunStatus,
-        stage: "pending" as ForgeRunStatus,
+        status,
+        stage: status,
         demoMode: (process.env.DEMO_MODE ?? "live") as ForgeRun["demoMode"],
         durationsMs: {},
         costUsd: {},
