@@ -5,9 +5,16 @@
 // `durationInFrames` is calculated dynamically from the ShotList beats
 // + intro/outro at calculateMetadata time.
 
-import { Composition, getInputProps } from "remotion";
+import { Composition, getInputProps, registerRoot } from "remotion";
 import { z } from "zod";
-import { PreOpExplainer, defaultProps, propsSchema } from "@/remotion/compositions/PreOpExplainer";
+import { PreOpExplainer, defaultProps, propsSchema } from "./compositions/PreOpExplainer";
+import {
+  SubmissionDeck,
+  SubmissionSlide1,
+  SubmissionSlide2,
+  SubmissionSlide3,
+  TOTAL_FRAMES as DECK_TOTAL_FRAMES,
+} from "./compositions/SubmissionDeck";
 
 // ─── Constants ─────────────────────────────────────────────────────────
 
@@ -51,6 +58,40 @@ export const RemotionRoot: React.FC = () => {
           };
         }}
       />
+      <Composition
+        id="SubmissionDeck"
+        component={SubmissionDeck}
+        durationInFrames={DECK_TOTAL_FRAMES}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
+      <Composition
+        id="SubmissionSlide1"
+        component={SubmissionSlide1}
+        durationInFrames={1}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
+      <Composition
+        id="SubmissionSlide2"
+        component={SubmissionSlide2}
+        durationInFrames={1}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
+      <Composition
+        id="SubmissionSlide3"
+        component={SubmissionSlide3}
+        durationInFrames={1}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
     </>
   );
 };
+
+registerRoot(RemotionRoot);
