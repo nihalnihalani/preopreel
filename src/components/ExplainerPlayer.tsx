@@ -15,7 +15,6 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Maximize2 } from "lucide-react";
 import type { ShotList } from "@/lib/forge/shotList";
 import { forgeUrls } from "@/lib/api/client";
-import { DemoBadge } from "@/components/DemoBadge";
 
 interface ExplainerPlayerProps {
   forgeRunId: string;
@@ -115,12 +114,6 @@ export function ExplainerPlayer({
       ].join(" ")}
       aria-label="Pre-operative explainer player"
     >
-      {/* Persistent demo badge in chrome — plan 04 risk: full-screen
-          must not hide the synthetic-phantom label. */}
-      <div className="absolute right-3 top-3 z-10">
-        <DemoBadge variant="compact" />
-      </div>
-
       <div className="relative flex-1 bg-black">
         <video
           ref={videoRef}

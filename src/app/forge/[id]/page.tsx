@@ -82,13 +82,11 @@ export default function ForgeRunPage({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr_480px]">
         <div className="min-h-[640px]">
           {/* Once a run is in flight, the upload panel becomes a passive
-              recap of the inputs. The user can still click "Try the demo
-              case" to start a fresh run that lands at /forge/{newId}. */}
+              recap of the inputs. The user can start a fresh run here. */}
           <PreOpUpload
             onStarted={() => {
               /* navigation handled inside */
             }}
-            demoPrimary
           />
         </div>
         <div className="min-h-[640px]">

@@ -1,7 +1,7 @@
 // Navbar — top bar.
 //
 // Per plan 04 §A.2.6:
-//   - Left: PreOpReel wordmark + DemoBadge (when on demo path).
+//   - Left: PreOpReel wordmark.
 //   - Center: Seed lineup pill (Seed 2.0 / Seedream 5.0 / Seedance 2.0 / Seed Speech 2.0).
 //   - Right: invariant indicators (4 dots) + DEMO_MODE indicator.
 //
@@ -10,7 +10,6 @@
 // rendered into the DebugInvariantPanel, behind a flag).
 
 import Link from "next/link";
-import { DemoBadge } from "@/components/DemoBadge";
 
 const SEED_LINEUP = [
   "Seed 2.0",
@@ -32,7 +31,7 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 border-b border-ink-700/60 bg-ink-950/80 backdrop-blur supports-[backdrop-filter]:bg-ink-950/60">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between gap-6 px-6">
-        {/* ─── Left: wordmark + demo badge ─────────────────────────────── */}
+        {/* ─── Left: wordmark ──────────────────────────────────────────── */}
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -49,7 +48,6 @@ export function Navbar() {
               PreOpReel
             </span>
           </Link>
-          <DemoBadge variant="compact" />
         </div>
 
         {/* ─── Center: Seed lineup pill ────────────────────────────────── */}

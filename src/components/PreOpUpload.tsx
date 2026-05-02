@@ -2,29 +2,29 @@
 
 // PreOpUpload — drag-and-drop ingest panel.
 //
-// Per plan 04 §A.2.1:
+// Per plan 04 §A.2.1 (post-2026-05-02 Option-A demo-CTA removal):
 //   - drag-and-drop for plan.pdf (≤10MB, application/pdf)
 //   - JSON paste / file for patient.json validated against the Zod
 //     `Patient` schema imported from src/lib/forge/anatomyGraph.ts
-//   - prominent "Try the demo case" button
 //   - on submit, POSTs multipart to /api/forge and resolves to a
 //     forge_run_id; consumer is responsible for routing.
 //
-// Synthetic-phantom amber badge is permanently visible (Invariant 4 / C-4).
+// The Synthetic-Phantom badge previously rendered in this component was
+// removed alongside the demo CTAs. The "Synthetic Phantom · Demo Case"
+// label still appears in the rendered MP4 via IntroCard for any run that
+// uses the demo fixture; that's the on-camera honesty surface (Invariant
+// 4). Internal smoke tests still hit ?fixture=hip-replacement.
 
 import { useCallback, useRef, useState } from "react";
-import { Upload, FileText, FileJson, Sparkles, X } from "lucide-react";
+import { Upload, FileText, FileJson, X } from "lucide-react";
 import { Patient } from "@/lib/forge/anatomyGraph";
 import { useStartForgeRun } from "@/lib/api/client";
-import { DemoBadge } from "@/components/DemoBadge";
 
 interface PreOpUploadProps {
   onStarted: (forgeRunId: string) => void;
-  /** When true, the demo CTA is highlighted as the primary action. */
-  demoPrimary?: boolean;
 }
 
-export function PreOpUpload({ onStarted, demoPrimary }: PreOpUploadProps) {
+export function PreOpUpload({ onStarted }: PreOpUploadProps) {
   const [planFile, setPlanFile] = useState<File | null>(null);
   const [patientFile, setPatientFile] = useState<File | null>(null);
   const [patientJsonText, setPatientJsonText] = useState<string>("");
@@ -153,19 +153,6 @@ export function PreOpUpload({ onStarted, demoPrimary }: PreOpUploadProps) {
     onStarted,
   ]);
 
-  const onDemo = useCallback(async () => {
-    try {
-      const { forgeRunId } = await startMutation.mutateAsync({
-        fixture: "hip-replacement",
-      });
-      onStarted(forgeRunId);
-    } catch (err) {
-      setPlanError(
-        `Demo start failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }, [startMutation, onStarted]);
-
   const submitting = startMutation.isPending;
 
   return (
@@ -173,51 +160,14 @@ export function PreOpUpload({ onStarted, demoPrimary }: PreOpUploadProps) {
       className="surface-card flex h-full flex-col gap-4 rounded-xl p-5"
       aria-label="Procedure plan + patient card upload"
     >
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-clinical-300">
-            Step 1 · Inputs
-          </h2>
-          <p className="mt-1 text-base font-medium text-clinical-100">
-            Drop the procedure plan + patient card.
-          </p>
-        </div>
-        <DemoBadge variant="compact" />
+      <header>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-clinical-300">
+          Step 1 · Inputs
+        </h2>
+        <p className="mt-1 text-base font-medium text-clinical-100">
+          Drop the procedure plan + patient card.
+        </p>
       </header>
-
-      {/* ─── Demo CTA — prominent ──────────────────────────────── */}
-      <button
-        type="button"
-        onClick={onDemo}
-        disabled={submitting}
-        aria-label="Try the synthetic phantom hip-replacement demo case"
-        className={[
-          "group flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition-all",
-          demoPrimary
-            ? "border-critic-lyra/50 bg-critic-lyra/10 hover:bg-critic-lyra/15"
-            : "border-ink-700/70 bg-ink-900/60 hover:border-critic-lyra/40 hover:bg-critic-lyra/5",
-          submitting && "cursor-not-allowed opacity-50",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        <span className="flex items-center gap-3">
-          <Sparkles className="h-4 w-4 text-critic-lyra" aria-hidden="true" />
-          <span>
-            <span className="block text-sm font-semibold text-clinical-100">
-              Try the demo case
-            </span>
-            <span className="block text-xs text-clinical-300">
-              Synthetic phantom · hip replacement · posterior approach
-            </span>
-          </span>
-        </span>
-        <span className="text-xs text-clinical-300 transition-transform group-hover:translate-x-0.5">
-          {submitting ? "starting…" : "→"}
-        </span>
-      </button>
-
-      <Divider label="OR upload your own" />
 
       {/* ─── Drop zone ────────────────────────────────────────── */}
       <div
@@ -381,18 +331,6 @@ function EmptyPill({ label }: { label: string }) {
   return (
     <div className="rounded border border-ink-700/60 bg-ink-900/40 px-3 py-2 text-xs text-clinical-300">
       {label}
-    </div>
-  );
-}
-
-function Divider({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="h-px flex-1 bg-ink-700/60" />
-      <span className="text-[10px] uppercase tracking-wider text-clinical-300">
-        {label}
-      </span>
-      <span className="h-px flex-1 bg-ink-700/60" />
     </div>
   );
 }
