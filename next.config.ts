@@ -4,8 +4,8 @@ const config: NextConfig = {
   reactStrictMode: true,
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },
-    typedRoutes: true,
   },
+  typedRoutes: true,
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.butterbase.dev" },
