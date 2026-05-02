@@ -24,6 +24,7 @@
     "verify:backup": "python3 scripts/verify_backup_video.py",
     "probe:butterbase": "tsx scripts/probe_butterbase.ts",
     "phantom:plan": "python3 scripts/generate_phantom_plan.py",
+    "render:explainer": "python3 scripts/render_demo_explainer.py",
     "bb:migrate": "tsx butterbase/apply.ts"
   },
   "dependencies": {

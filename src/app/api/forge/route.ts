@@ -57,13 +57,20 @@ async function safeInsertRow(
 ): Promise<void> {
   // Local-store write is unconditional — this is what makes GET /api/forge/{id}
   // succeed for fresh uploads even when Butterbase Postgres is unreachable.
+  //
+  // In replay mode the synthesis output is pre-rendered (the explainer MP4 +
+  // critic scores + audit PDF all live on disk), so we flip the run to `done`
+  // immediately. Otherwise the HUD shows a perpetual loading spinner because
+  // no worker advances the row past `pending`. In live mode the worker owns
+  // status transitions; we leave the row at `pending`.
+  const isReplay = demoMode === "replay";
   try {
     const { upsertLocalRun } = await import("@/lib/butterbase/local-store");
     await upsertLocalRun({
       id: forgeRunId,
       createdAt: new Date().toISOString(),
-      status: "pending",
-      stage: "pending",
+      status: isReplay ? "done" : "pending",
+      stage: isReplay ? "done" : "pending",
       demoMode: (demoMode as "live" | "replay" | "hybrid") ?? "live",
       durationsMs: {},
       costUsd: {},
