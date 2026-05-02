@@ -93,33 +93,38 @@ const POLL_BASE_MS = 2000;
 const POLL_MAX_MS = 8000;
 const POLL_OVERALL_MS = 180_000;
 
+// BytePlus ARK content-generation tasks API:
+//   POST /contents/generations/tasks       -> { id }
+//   GET  /contents/generations/tasks/{id}  -> { id, status, content?: { video_url } }
+// Status values observed: queued | running | succeeded | failed | cancelled.
 interface SeedanceJobStatus {
+  id: string;
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-  request_id: string;
-  video_url?: string;
-  last_frame_url?: string;
-  duration_s?: number;
-  error?: string;
+  content?: { video_url?: string; last_frame_url?: string; duration_s?: number };
+  error?: { message?: string } | string;
 }
 
 async function pollUntilDone(
   apiKey: string,
-  requestId: string,
+  taskId: string,
 ): Promise<SeedanceJobStatus> {
   const start = Date.now();
   let waitMs = POLL_BASE_MS;
   while (true) {
     if (Date.now() - start > POLL_OVERALL_MS) {
       throw new SeedanceJobError(
-        `Seedance request ${requestId} timed out after ${POLL_OVERALL_MS}ms`,
+        `Seedance task ${taskId} timed out after ${POLL_OVERALL_MS}ms`,
       );
     }
     await new Promise((r) => setTimeout(r, waitMs));
     waitMs = Math.min(POLL_MAX_MS, Math.floor(waitMs * 1.5));
-    const res = await fetch(`${SEEDANCE_BASE_URL}/requests/${requestId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await fetch(
+      `${SEEDANCE_BASE_URL}/contents/generations/tasks/${taskId}`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
     if (!res.ok) {
       if (res.status === 429 || res.status === 401 || res.status === 403) {
         rotate(
@@ -135,8 +140,12 @@ async function pollUntilDone(
     const body = (await res.json()) as SeedanceJobStatus;
     if (body.status === "succeeded") return body;
     if (body.status === "failed" || body.status === "cancelled") {
+      const errMsg =
+        typeof body.error === "string"
+          ? body.error
+          : body.error?.message ?? "unknown";
       throw new SeedanceJobError(
-        `Seedance request ${requestId} ${body.status}: ${body.error ?? "unknown"}`,
+        `Seedance task ${taskId} ${body.status}: ${errMsg}`,
       );
     }
   }
@@ -149,7 +158,7 @@ async function pollUntilDone(
 // as `{key}.json`; on replay we unpack meta back into a SeedanceSegment.
 
 interface SeedanceSubmitResponse {
-  request_id: string;
+  id: string;
 }
 
 interface CachedSegment {
@@ -157,28 +166,62 @@ interface CachedSegment {
   meta: SeedanceSegment & { cost_estimate_usd: number };
 }
 
+// The pinned video model takes a content[] array on /contents/generations/tasks.
+// Generation parameters (duration / resolution / ratio) are encoded as
+// --flag tokens appended to the text prompt — this is the documented v1 shape.
+type ContentItem =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+function buildContentText(payload: SeedancePayload): ContentItem {
+  const aspect = payload.aspect_ratio ?? "16:9";
+  const duration = Math.min(payload.duration_s, 5);
+  const flags = ` --duration ${duration} --resolution 1080p --ratio ${aspect}`;
+  return { type: "text", text: payload.prompt + flags };
+}
+
+// BytePlus Seedream returns short-lived signed TOS URLs. Seedance's image
+// fetcher cannot consume them (cross-service signature mismatch — 400
+// "content[1].image_url is not valid"). We sidestep that by inlining the
+// keyframe bytes as a base64 data URI before submitting the task.
+async function fetchableImageUrl(url: string): Promise<string> {
+  if (url.startsWith("data:")) return url;
+  if (!/^https?:\/\//.test(url)) return url;
+  const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!r.ok) return url;
+  const ct = r.headers.get("content-type") ?? "image/jpeg";
+  const buf = Buffer.from(await r.arrayBuffer());
+  return `data:${ct};base64,${buf.toString("base64")}`;
+}
+
+async function buildContent(payload: SeedancePayload): Promise<ContentItem[]> {
+  const items: ContentItem[] = [buildContentText(payload)];
+  const firstRef = payload.video_ref ?? payload.image_refs[0];
+  if (firstRef) {
+    const inlineUrl = await fetchableImageUrl(firstRef);
+    items.push({ type: "image_url", image_url: { url: inlineUrl } });
+  }
+  return items;
+}
+
 async function liveSubmit(
   payload: SeedancePayload,
   model: SeedModelId,
 ): Promise<CachedSegment> {
   const apiKey = nextKey("seedance");
-  const body = {
-    model,
-    prompt: payload.prompt,
-    image_refs: payload.image_refs,
-    video_ref: payload.video_ref,
-    duration_s: Math.min(payload.duration_s, 5),
-    aspect_ratio: payload.aspect_ratio ?? "16:9",
-  };
-  const res = await fetch(`${SEEDANCE_BASE_URL}/seedance/generate`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const body = { model, content: await buildContent(payload) };
+  const res = await fetch(
+    `${SEEDANCE_BASE_URL}/contents/generations/tasks`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
     },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
-  });
+  );
   if (!res.ok) {
     if (res.status === 429 || res.status === 401 || res.status === 403) {
       rotate(
@@ -193,69 +236,48 @@ async function liveSubmit(
     );
   }
   const submit = (await res.json()) as SeedanceSubmitResponse;
-  const status = await pollUntilDone(apiKey, submit.request_id);
-  const videoUrl = status.video_url ?? "";
+  const status = await pollUntilDone(apiKey, submit.id);
+  const videoUrl = status.content?.video_url ?? "";
   let mp4Bytes = new Uint8Array(0);
   if (videoUrl) {
     const v = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) });
     if (v.ok) mp4Bytes = new Uint8Array(await v.arrayBuffer());
   }
+  const dur = status.content?.duration_s ?? Math.min(payload.duration_s, 5);
   return {
     bytes: mp4Bytes,
     meta: {
-      request_id: submit.request_id,
+      request_id: submit.id,
       video_url: videoUrl,
-      last_frame_url: status.last_frame_url ?? "",
-      duration_s: status.duration_s ?? body.duration_s,
-      cost_estimate_usd: 0.05 * body.duration_s,
+      last_frame_url: status.content?.last_frame_url ?? "",
+      duration_s: dur,
+      cost_estimate_usd: 0.05 * dur,
     },
   };
 }
 
+// Extend not natively supported on the pinned v1 video model. We emulate
+// extension by chaining I2V calls off the prior segment's last_frame_url —
+// runWithExtend below already does this when remaining > 0.
 async function liveExtend(
-  prevRequestId: string,
+  prevLastFrameUrl: string,
   prompt: string,
   durationS: number,
 ): Promise<CachedSegment> {
-  const apiKey = nextKey("seedance");
-  const body = {
-    model: VIDEO_EXTEND_MODEL,
-    request_id: prevRequestId,
+  const payload: SeedancePayload = {
+    beatId: `extend-${Date.now()}`,
     prompt,
+    image_refs: prevLastFrameUrl ? [prevLastFrameUrl] : [],
     duration_s: durationS,
   };
-  const res = await fetch(`${SEEDANCE_BASE_URL}/seedance/extend`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) {
+  if (payload.image_refs.length === 0) {
     throw new SeedanceJobError(
-      `Seedance extend failed: ${res.status} ${await res.text().catch(() => "")}`,
+      "Seedance extend: prev segment has no last_frame_url; cannot chain.",
     );
   }
-  const submit = (await res.json()) as SeedanceSubmitResponse;
-  const status = await pollUntilDone(apiKey, submit.request_id);
-  const videoUrl = status.video_url ?? "";
-  let mp4Bytes = new Uint8Array(0);
-  if (videoUrl) {
-    const v = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) });
-    if (v.ok) mp4Bytes = new Uint8Array(await v.arrayBuffer());
-  }
-  return {
-    bytes: mp4Bytes,
-    meta: {
-      request_id: submit.request_id,
-      video_url: videoUrl,
-      last_frame_url: status.last_frame_url ?? "",
-      duration_s: status.duration_s ?? durationS,
-      cost_estimate_usd: 0.05 * durationS,
-    },
-  };
+  // Reuse the standard submit path with the prev last frame as the anchor.
+  // VIDEO_EXTEND_MODEL is currently aliased to the same model id as VIDEO_MODEL.
+  return liveSubmit(payload, VIDEO_EXTEND_MODEL);
 }
 
 /** Pull a SeedanceSegment out of the {bytes, meta} cached shape. */
@@ -306,7 +328,7 @@ export async function seedanceExtend(
   return limiter(async () => {
     const cacheKey = hashCacheKey({
       kind: "extend",
-      prev_request_id: prev.request_id,
+      prev_last_frame: prev.last_frame_url,
       prompt,
       durationS,
     });
@@ -314,7 +336,7 @@ export async function seedanceExtend(
       stage: "stage_9_seedance_extend",
       key: cacheKey,
       codec: "mp4",
-      live: () => liveExtend(prev.request_id, prompt, durationS),
+      live: () => liveExtend(prev.last_frame_url, prompt, durationS),
     });
     const seg = unwrap(cached);
     return {
@@ -356,12 +378,17 @@ async function runWithExtend(
     let head: SeedanceSegment & { cost_estimate_usd: number } = first;
     const segments: SeedanceSegment[] = [first];
 
+    // The pinned video model does not surface a usable last_frame_url in the
+    // task status response, which means we cannot chain extend segments off
+    // the prior tail frame. For beats >5s we accept a 5s cap rather than
+    // breaking the pipeline. Remotion can ease/repeat to fill the duration
+    // at composition time.
     let remaining = payload.duration_s - 5;
-    while (remaining > 0) {
+    while (remaining > 0 && head.last_frame_url) {
       const chunk = Math.min(remaining, 5);
       const extKey = hashCacheKey({
         kind: "extend",
-        prev_request_id: head.request_id,
+        prev_last_frame: head.last_frame_url,
         prompt: payload.prompt,
         durationS: chunk,
       });
@@ -369,7 +396,7 @@ async function runWithExtend(
         stage: "stage_9_seedance_extend",
         key: extKey,
         codec: "mp4",
-        live: () => liveExtend(head.request_id, payload.prompt, chunk),
+        live: () => liveExtend(head.last_frame_url, payload.prompt, chunk),
       });
       const ext = unwrap(cachedExt);
       segments.push(ext);

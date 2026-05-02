@@ -39,12 +39,19 @@ interface StartResult {
 // fixture data via the SSE / cached endpoints.
 async function safeEnqueue(forgeRunId: string, source: "fixture" | "upload"): Promise<void> {
   try {
-    // Dynamic import so a missing module doesn't tank the whole route.
-    const mod = (await import("@worker/queue").catch(() => null)) as
+    // Bootstrap the worker (idempotent) so jobs actually drain. Without
+    // this the in-memory queue accepts work but no handler runs, and
+    // every run sits at stage="pending" forever.
+    const worker = (await import("@worker/index").catch(() => null)) as
+      | { bootstrapWorker?: () => void }
+      | null;
+    worker?.bootstrapWorker?.();
+
+    const queue = (await import("@worker/queue").catch(() => null)) as
       | { enqueue?: (id: string) => Promise<void> }
       | null;
-    if (mod?.enqueue) {
-      await mod.enqueue(forgeRunId);
+    if (queue?.enqueue) {
+      await queue.enqueue(forgeRunId);
     }
   } catch (err) {
     console.warn(`[api/forge] enqueue failed (non-fatal, source=${source}):`, err);

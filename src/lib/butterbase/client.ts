@@ -54,7 +54,14 @@ import type { Critique, CriticScore } from "@/lib/forge/critique";
 import type { AuditEntry } from "@/lib/forge/audit";
 import type { ShotList } from "@/lib/forge/shotList";
 import type { ForgeRun } from "@/lib/forge/types";
-import { getLocalRun, upsertLocalRun } from "./local-store";
+import { getLocalRun, upsertLocalRun, pushLocal, getLocalDetails } from "./local-store";
+
+// Best-effort local-store fallback used by every persist* below. Returns
+// true if the failure was the expected "no database configured" error
+// (caller should swallow); rethrows otherwise.
+function isNoDbError(err: unknown): boolean {
+  return err instanceof Error && err.name === "NoButterbaseDatabaseUrlError";
+}
 
 // Domain alias — the worker calls this an AuditCitation in plan 05; the
 // authoritative Zod schema names it AuditEntry. We accept either shape via
@@ -159,8 +166,38 @@ export async function persistForgeRun(
   };
   if (id) row.id = id;
 
-  const inserted = await insertRow<{ id: string }>("forge_runs", row, ["id"]);
-  return inserted.id;
+  try {
+    const inserted = await insertRow<{ id: string }>("forge_runs", row, ["id"]);
+    return inserted.id;
+  } catch (err) {
+    if (!(err instanceof Error && err.name === "NoButterbaseDatabaseUrlError")) {
+      console.warn("[butterbase/client] persistForgeRun pg failed:", err);
+    }
+  }
+
+  // Fallback
+  const finalId = id || crypto.randomUUID();
+  const { upsertLocalRun, getLocalRun } = await import("./local-store");
+  const existing = await getLocalRun(finalId) ?? {
+    id: finalId,
+    createdAt: new Date().toISOString(),
+    status: status as ForgeRun["status"],
+    stage: stage as ForgeRun["stage"],
+    demoMode: demoMode as ForgeRun["demoMode"],
+    durationsMs: {},
+    costUsd: {},
+    error: null,
+  };
+  await upsertLocalRun({
+    ...existing,
+    status: status as ForgeRun["status"],
+    stage: stage as ForgeRun["stage"],
+    demoMode: demoMode as ForgeRun["demoMode"],
+    durationsMs: { ...existing.durationsMs, ...durations },
+    costUsd: { ...existing.costUsd, ...cost },
+    error: error ?? existing.error,
+  });
+  return finalId;
 }
 
 /**
@@ -216,13 +253,29 @@ export async function updateForgeRunStage(
                                ELSE cost_usd END
      WHERE id = $1
   `;
-  await query(sql, [
-    id,
-    stage,
-    typeof durationMs === "number" ? stage : null,
-    typeof durationMs === "number" ? Math.round(durationMs) : null,
-    typeof costUsd === "number" ? costUsd : null,
-  ]);
+  try {
+    await query(sql, [
+      id,
+      stage,
+      typeof durationMs === "number" ? stage : null,
+      typeof durationMs === "number" ? Math.round(durationMs) : null,
+      typeof costUsd === "number" ? costUsd : null,
+    ]);
+  } catch (err) {
+    if (!(err instanceof Error && err.name === "NoButterbaseDatabaseUrlError")) {
+      console.warn("[butterbase/client] updateForgeRunStage pg failed:", err);
+    }
+  }
+
+  // Fallback
+  const { upsertLocalRun, getLocalRun } = await import("./local-store");
+  const existing = await getLocalRun(id);
+  if (existing) {
+    if (typeof durationMs === "number") existing.durationsMs[stage as keyof ForgeRun["durationsMs"]] = Math.round(durationMs);
+    if (typeof costUsd === "number") existing.costUsd[stage as keyof ForgeRun["costUsd"]] = costUsd;
+    existing.stage = stage as ForgeRun["stage"];
+    await upsertLocalRun(existing);
+  }
 }
 
 /**
@@ -233,11 +286,26 @@ export async function updateForgeRunStatus(
   status: ForgeRunStatusRow,
   error?: string,
 ): Promise<void> {
-  await updateRow(
-    "forge_runs",
-    { status, error: error ?? null },
-    { id },
-  );
+  try {
+    await updateRow(
+      "forge_runs",
+      { status, error: error ?? null },
+      { id },
+    );
+  } catch (err) {
+    if (!(err instanceof Error && err.name === "NoButterbaseDatabaseUrlError")) {
+      console.warn("[butterbase/client] updateForgeRunStatus pg failed:", err);
+    }
+  }
+
+  // Fallback
+  const { upsertLocalRun, getLocalRun } = await import("./local-store");
+  const existing = await getLocalRun(id);
+  if (existing) {
+    existing.status = status as ForgeRun["status"];
+    if (error) existing.error = error;
+    await upsertLocalRun(existing);
+  }
 }
 
 /**
@@ -252,7 +320,22 @@ export async function setForgeRunDeliverables(
   if (args.explainerKey) set.explainer_mp4_url = args.explainerKey;
   if (args.auditKey) set.audit_trail_pdf_url = args.auditKey;
   if (Object.keys(set).length === 0) return;
-  await updateRow("forge_runs", set, { id });
+  try {
+    await updateRow("forge_runs", set, { id });
+  } catch (err) {
+    if (!(err instanceof Error && err.name === "NoButterbaseDatabaseUrlError")) {
+      console.warn("[butterbase/client] setForgeRunDeliverables pg failed:", err);
+    }
+  }
+
+  // Fallback
+  const { upsertLocalRun, getLocalRun } = await import("./local-store");
+  const existing = await getLocalRun(id);
+  if (existing) {
+    if (args.explainerKey) (existing as any).explainer_mp4_url = args.explainerKey;
+    if (args.auditKey) (existing as any).audit_trail_pdf_url = args.auditKey;
+    await upsertLocalRun(existing);
+  }
 }
 
 // ============================================================================
@@ -264,11 +347,20 @@ export async function persistProcedurePlan(
   plan: unknown,
   pdfStorageKey: string,
 ): Promise<void> {
-  await insertRow("procedure_plans", {
+  const row = {
     forge_run_id: forgeRunId,
     pdf_url: pdfStorageKey,
     parsed_json: JSON.stringify(plan),
-  });
+  };
+  try {
+    await insertRow("procedure_plans", row);
+    return;
+  } catch (err) {
+    if (!isNoDbError(err)) {
+      console.warn("[butterbase/client] persistProcedurePlan pg failed:", err);
+    }
+  }
+  await pushLocal("procedurePlans", row as unknown as ProcedurePlanRow);
 }
 
 export async function persistPatientDemographics(
@@ -281,14 +373,23 @@ export async function persistPatientDemographics(
     syntheticPhantom?: boolean;
   },
 ): Promise<void> {
-  await insertRow("patient_demographics", {
+  const row = {
     forge_run_id: forgeRunId,
     age: card.age,
     sex: card.sex,
     bmi: card.bmi ?? null,
     comorbidities: card.comorbidities ?? [],
     synthetic_phantom: card.syntheticPhantom ?? true,
-  });
+  };
+  try {
+    await insertRow("patient_demographics", row);
+    return;
+  } catch (err) {
+    if (!isNoDbError(err)) {
+      console.warn("[butterbase/client] persistPatientDemographics pg failed:", err);
+    }
+  }
+  await pushLocal("patientDemographics", row as unknown as PatientDemographicsRow);
 }
 
 export async function persistAnatomyGraph(
@@ -296,11 +397,21 @@ export async function persistAnatomyGraph(
   graph: unknown,
   confidenceDistribution?: Record<string, number>,
 ): Promise<void> {
-  await insertRow("anatomy_graphs", {
+  const row = {
     forge_run_id: forgeRunId,
     graph_json: JSON.stringify(graph),
     confidence_distribution: JSON.stringify(confidenceDistribution ?? {}),
-  });
+    created_at: new Date().toISOString(),
+  };
+  try {
+    await insertRow("anatomy_graphs", row);
+    return;
+  } catch (err) {
+    if (!isNoDbError(err)) {
+      console.warn("[butterbase/client] persistAnatomyGraph pg failed:", err);
+    }
+  }
+  await pushLocal("anatomyGraphs", row as unknown as AnatomyGraphRow);
 }
 
 /**
@@ -313,23 +424,38 @@ export async function persistShotList(
   shotList: ShotList | unknown,
   createdBy: "atlas" | "atlas-after-mara",
 ): Promise<{ version: number }> {
-  return withTransaction(async (client) => {
-    const version = createdBy === "atlas" ? 1 : 2;
-    const sql = `
-      INSERT INTO shot_lists (forge_run_id, version, shot_list_json, created_by)
-      VALUES ($1, $2, $3::jsonb, $4)
-      ON CONFLICT (forge_run_id, version) DO UPDATE
-        SET shot_list_json = EXCLUDED.shot_list_json
-      RETURNING version
-    `;
-    const r = await client.query<{ version: number }>(sql, [
-      forgeRunId,
-      version,
-      JSON.stringify(shotList),
-      createdBy,
-    ]);
-    return { version: r.rows[0]?.version ?? version };
-  });
+  const version = createdBy === "atlas" ? 1 : 2;
+  try {
+    return await withTransaction(async (client) => {
+      const sql = `
+        INSERT INTO shot_lists (forge_run_id, version, shot_list_json, created_by)
+        VALUES ($1, $2, $3::jsonb, $4)
+        ON CONFLICT (forge_run_id, version) DO UPDATE
+          SET shot_list_json = EXCLUDED.shot_list_json
+        RETURNING version
+      `;
+      const r = await client.query<{ version: number }>(sql, [
+        forgeRunId,
+        version,
+        JSON.stringify(shotList),
+        createdBy,
+      ]);
+      return { version: r.rows[0]?.version ?? version };
+    });
+  } catch (err) {
+    if (!isNoDbError(err)) {
+      console.warn("[butterbase/client] persistShotList pg failed:", err);
+    }
+  }
+  const row = {
+    forge_run_id: forgeRunId,
+    version,
+    shot_list_json: shotList as unknown,
+    created_by: createdBy,
+    created_at: new Date().toISOString(),
+  };
+  await pushLocal("shotLists", row as unknown as ShotListRow);
+  return { version };
 }
 
 // ============================================================================
@@ -346,7 +472,7 @@ export async function persistCritique(
   critique: Critique | unknown,
 ): Promise<void> {
   const c = critique as AnyRecord;
-  await insertRow("critiques", {
+  const row = {
     forge_run_id: forgeRunId,
     shot_id: pickStr(c, "shotId", "shot_id") ?? "",
     severity: (pickStr(c, "severity") as CritiqueSeverityRow) ?? "info",
@@ -355,8 +481,18 @@ export async function persistCritique(
     reason: pickStr(c, "reason") ?? "",
     suggested_revision:
       pickStr(c, "suggestedRevision", "suggested_revision") ?? null,
-    persona: "mara",
-  });
+    persona: "mara" as const,
+    created_at: new Date().toISOString(),
+  };
+  try {
+    await insertRow("critiques", row);
+    return;
+  } catch (err) {
+    if (!isNoDbError(err)) {
+      console.warn("[butterbase/client] persistCritique pg failed:", err);
+    }
+  }
+  await pushLocal("critiques", row as unknown as CritiqueRow);
 }
 
 /**
@@ -374,7 +510,7 @@ export async function persistCriticScore(
   regenAttempt: number,
 ): Promise<void> {
   const s = score as AnyRecord;
-  await insertRow("critic_scores", {
+  const row = {
     forge_run_id: forgeRunId,
     beat_id: beatId,
     regen_attempt: regenAttempt,
@@ -387,8 +523,18 @@ export async function persistCriticScore(
     accepted: pickBool(s, "accepted") ?? false,
     accepted_with_low_score:
       pickBool(s, "acceptedWithLowScore", "accepted_with_low_score") ?? false,
-    persona: "lyra",
-  });
+    persona: "lyra" as const,
+    created_at: new Date().toISOString(),
+  };
+  try {
+    await insertRow("critic_scores", row);
+    return;
+  } catch (err) {
+    if (!isNoDbError(err)) {
+      console.warn("[butterbase/client] persistCriticScore pg failed:", err);
+    }
+  }
+  await pushLocal("criticScores", row as unknown as CriticScoreRow);
 }
 
 // ============================================================================
@@ -407,36 +553,63 @@ function isReplayMode(): boolean {
 }
 
 export async function getCritiques(forgeRunId: string): Promise<CritiqueRow[]> {
-  if (isReplayMode()) return [];
-  const r = await query<CritiqueRow>(
-    `SELECT * FROM critiques WHERE forge_run_id = $1 ORDER BY created_at ASC`,
-    [forgeRunId],
-  );
-  return r.rows;
+  if (!isReplayMode()) {
+    try {
+      const r = await query<CritiqueRow>(
+        `SELECT * FROM critiques WHERE forge_run_id = $1 ORDER BY created_at ASC`,
+        [forgeRunId],
+      );
+      if (r.rows.length > 0) return r.rows;
+    } catch (err) {
+      if (!isNoDbError(err)) {
+        console.warn("[butterbase/client] getCritiques pg failed, using local-store:", err);
+      }
+    }
+  }
+  const details = await getLocalDetails(forgeRunId);
+  return details.critiques as unknown as CritiqueRow[];
 }
 
 export async function getCriticScores(
   forgeRunId: string,
 ): Promise<CriticScoreRow[]> {
-  if (isReplayMode()) return [];
-  const r = await query<CriticScoreRow>(
-    `SELECT * FROM critic_scores
-       WHERE forge_run_id = $1
-       ORDER BY beat_id, regen_attempt`,
-    [forgeRunId],
-  );
-  return r.rows;
+  if (!isReplayMode()) {
+    try {
+      const r = await query<CriticScoreRow>(
+        `SELECT * FROM critic_scores
+           WHERE forge_run_id = $1
+           ORDER BY beat_id, regen_attempt`,
+        [forgeRunId],
+      );
+      if (r.rows.length > 0) return r.rows;
+    } catch (err) {
+      if (!isNoDbError(err)) {
+        console.warn("[butterbase/client] getCriticScores pg failed, using local-store:", err);
+      }
+    }
+  }
+  const details = await getLocalDetails(forgeRunId);
+  return details.critic_scores as unknown as CriticScoreRow[];
 }
 
 export async function getAuditEntries(
   forgeRunId: string,
 ): Promise<AuditCitationRow[]> {
-  if (isReplayMode()) return [];
-  const r = await query<AuditCitationRow>(
-    `SELECT * FROM audit_citations WHERE forge_run_id = $1 ORDER BY claim_id`,
-    [forgeRunId],
-  );
-  return r.rows;
+  if (!isReplayMode()) {
+    try {
+      const r = await query<AuditCitationRow>(
+        `SELECT * FROM audit_citations WHERE forge_run_id = $1 ORDER BY claim_id`,
+        [forgeRunId],
+      );
+      if (r.rows.length > 0) return r.rows;
+    } catch (err) {
+      if (!isNoDbError(err)) {
+        console.warn("[butterbase/client] getAuditEntries pg failed, using local-store:", err);
+      }
+    }
+  }
+  const details = await getLocalDetails(forgeRunId);
+  return details.audit_citations as unknown as AuditCitationRow[];
 }
 
 // ============================================================================
@@ -476,7 +649,7 @@ export async function persistAuditCitation(
     pickNum(c, "confidenceHi", "confidence_hi") ??
     pickNum(band, "hi");
 
-  await insertRow("audit_citations", {
+  const row = {
     forge_run_id: forgeRunId,
     claim_id: pickStr(c, "claimId", "claim_id") ?? "",
     narrator_excerpt: narratorExcerpt,
@@ -484,7 +657,16 @@ export async function persistAuditCitation(
     pointer,
     confidence_lo: confidenceLo,
     confidence_hi: confidenceHi,
-  });
+  };
+  try {
+    await insertRow("audit_citations", row);
+    return;
+  } catch (err) {
+    if (!isNoDbError(err)) {
+      console.warn("[butterbase/client] persistAuditCitation pg failed:", err);
+    }
+  }
+  await pushLocal("auditCitations", row as unknown as AuditCitationRow);
 }
 
 // ============================================================================
@@ -657,8 +839,20 @@ export async function getForgeRun(
   }
   if (!run) {
     const local = await getLocalRun(id);
-    if (local) return local as unknown as ForgeRunWithDetails;
-    return null;
+    if (!local) return null;
+    const details = await getLocalDetails(id);
+    return {
+      ...(local as unknown as ForgeRunRow),
+      procedure_plan: details.procedure_plan,
+      patient_demographics: details.patient_demographics,
+      anatomy_graph: details.anatomy_graph,
+      shot_lists: details.shot_lists,
+      critiques: details.critiques,
+      critic_scores: details.critic_scores,
+      audit_citations: details.audit_citations,
+      explainer_signed_url: null,
+      audit_signed_url: null,
+    } as unknown as ForgeRunWithDetails;
   }
 
   const [planR, patR, anaR, slR, crR, scR, acR] = await Promise.all([

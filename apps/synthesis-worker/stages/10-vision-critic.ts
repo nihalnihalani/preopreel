@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { arkVision } from "@/lib/seed/ark";
+import { zaiVision } from "@/lib/seed/zai";
 import { seedanceI2V, seedanceT2VWithRef } from "@/lib/seed/seedance";
 import {
   runLyraCritique,
@@ -124,14 +125,17 @@ export async function runStage10(
             .map((e) => `${e.name} (${e.id})`)
             .join(", "),
         };
-        return arkVision<CriticScore>({
+        const visionArgs = {
           stage: `stage_10_lyra_${render.beat_id}_attempt${attemptIdx}`,
           frames: frames.map((f) => ({ url: f.url })),
           prompt: `Score this beat:\n${JSON.stringify(beatContext)}`,
           schema: CriticScoreSchema,
           systemPrompt,
           cacheKeyExtra: `${render.beat_id}_attempt${attemptIdx}`,
-        });
+        };
+        return process.env.USE_LEGACY_PROVIDERS === "1"
+          ? arkVision<CriticScore>(visionArgs)
+          : zaiVision<CriticScore>(visionArgs);
       },
       regenerate: async (feedback) => {
         // Re-run Stage 9 single-beat with feedback appended to the prompt.
