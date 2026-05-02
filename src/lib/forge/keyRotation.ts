@@ -12,7 +12,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 
-export type Provider = "ark" | "seedance";
+export type Provider = "ark" | "seedance" | "zai";
 
 export type RotationReason = "429" | "5xx" | "401" | "403" | "manual";
 
@@ -43,9 +43,20 @@ function envKeys(provider: Provider): string[] {
       process.env.ARK_API_KEY_3,
     ].filter((k): k is string => typeof k === "string" && k.length > 0);
   }
+  if (provider === "zai") {
+    // Beta University Discord (5/1): one issued key for the whole hackathon.
+    // No _2/_3 slots — but we honor them if a teammate adds backups locally.
+    return [
+      process.env.ZAI_API_KEY,
+      process.env.ZAI_API_KEY_2,
+      process.env.ZAI_API_KEY_3,
+    ].filter((k): k is string => typeof k === "string" && k.length > 0);
+  }
   return [
     process.env.SEEDANCE_API_KEY,
     process.env.SEEDANCE_API_KEY_2,
+    process.env.SEEDANCE_API_KEY_3,
+    process.env.SEEDANCE_API_KEY_4,
   ].filter((k): k is string => typeof k === "string" && k.length > 0);
 }
 
@@ -108,7 +119,7 @@ export async function load(): Promise<void> {
       string,
       { index?: number; cooldown?: Record<number, number> }
     >;
-    for (const provider of ["ark", "seedance"] as Provider[]) {
+    for (const provider of ["ark", "seedance", "zai"] as Provider[]) {
       const s = ensureProvider(provider);
       const persisted = parsed[provider];
       if (!persisted) continue;
@@ -123,7 +134,7 @@ export async function load(): Promise<void> {
     const e = err as NodeJS.ErrnoException;
     if (e.code === "ENOENT") return;
     // Corrupt JSON → reset rather than crash.
-    for (const provider of ["ark", "seedance"] as Provider[]) {
+    for (const provider of ["ark", "seedance", "zai"] as Provider[]) {
       ensureProvider(provider).index = 0;
     }
   }
@@ -147,9 +158,15 @@ export async function persist(): Promise<void> {
 export function next(provider: Provider): string {
   const s = ensureProvider(provider);
   if (s.keys.length === 0) {
+    const envName =
+      provider === "ark"
+        ? "ARK_API_KEY"
+        : provider === "zai"
+          ? "ZAI_API_KEY"
+          : "SEEDANCE_API_KEY";
     throw new Error(
       `keyRotation: no keys configured for provider="${provider}". ` +
-        `Set ${provider === "ark" ? "ARK_API_KEY" : "SEEDANCE_API_KEY"} (and optional _2/_3).`,
+        `Set ${envName} (and optional _2/_3).`,
     );
   }
   const now = Date.now();

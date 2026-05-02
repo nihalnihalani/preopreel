@@ -246,27 +246,40 @@ export interface MaraCritiqueInput {
  * files exist on disk at module-load time.
  */
 export async function invoke(input: MaraCritiqueInput): Promise<Critique[]> {
-  const [{ arkChat }, { SEED_MODELS }] = await Promise.all([
+  const useLegacy = process.env.USE_LEGACY_PROVIDERS === "1";
+  const [{ zaiChat }, { arkChat }, { SEED_MODELS }] = await Promise.all([
+    import("@/lib/seed/zai"),
     import("@/lib/seed/ark"),
     import("@/lib/seed/models"),
   ]);
 
   const userJson = JSON.stringify({ shotList: input.shotList });
-
-  const result = await arkChat<MaraOutput>({
-    stage: "04-mara",
-    persona: "mara",
-    systemPrompt: SYSTEM_PROMPT,
-    userContent: [{ type: "text", text: userJson }],
-    schema: MaraOutputEnvelope,
-    model: SEED_MODELS.director,
-    temperature: MARA_TEMPERATURE,
-    cacheKeyExtra: stableInputHash({
-      logline: input.shotList.logline.slice(0, 64),
-      beatIds: input.shotList.beats.map((b) => b.id),
-      beatCount: input.shotList.beats.length,
-    }),
+  const cacheKeyExtra = stableInputHash({
+    logline: input.shotList.logline.slice(0, 64),
+    beatIds: input.shotList.beats.map((b) => b.id),
+    beatCount: input.shotList.beats.length,
   });
+
+  const result = useLegacy
+    ? await arkChat<MaraOutput>({
+        stage: "04-mara",
+        persona: "mara",
+        systemPrompt: SYSTEM_PROMPT,
+        userContent: [{ type: "text", text: userJson }],
+        schema: MaraOutputEnvelope,
+        model: SEED_MODELS.director,
+        temperature: MARA_TEMPERATURE,
+        cacheKeyExtra,
+      })
+    : await zaiChat<MaraOutput>({
+        stage: "04-mara",
+        persona: "mara",
+        systemPrompt: SYSTEM_PROMPT,
+        userContent: [{ type: "text", text: userJson }],
+        schema: MaraOutputEnvelope,
+        temperature: MARA_TEMPERATURE,
+        cacheKeyExtra,
+      });
 
   return result.critiques;
 }

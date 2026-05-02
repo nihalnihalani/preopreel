@@ -170,7 +170,9 @@ export async function invoke(
     );
   }
 
-  const [{ arkVision }, { SEED_MODELS }] = await Promise.all([
+  const useLegacy = process.env.USE_LEGACY_PROVIDERS === "1";
+  const [{ zaiVision }, { arkVision }, { SEED_MODELS }] = await Promise.all([
+    import("@/lib/seed/zai"),
     import("@/lib/seed/ark"),
     import("@/lib/seed/models"),
   ]);
@@ -179,22 +181,35 @@ export async function invoke(
     beat: input.beat,
     anatomyGraph: input.anatomyGraph,
   });
+  const frames = input.frames.map((b64) => ({
+    url: b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`,
+    detail: "high" as const,
+  }));
+  const cacheKeyExtra = stableInputHash({
+    beatId: input.beat.id,
+    landmarkIds: input.anatomyGraph.landmarks.map((l) => l.id),
+    framesHash: input.frames.map((f) => f.length).join(","),
+  });
 
-  return arkVision<CriticScore>({
+  if (useLegacy) {
+    return arkVision<CriticScore>({
+      stage: "10-lyra",
+      frames,
+      prompt: promptJson,
+      schema: CriticScoreSchema,
+      systemPrompt: SYSTEM_PROMPT,
+      model: SEED_MODELS.vision_critic,
+      cacheKeyExtra,
+    });
+  }
+
+  return zaiVision<CriticScore>({
     stage: "10-lyra",
-    frames: input.frames.map((b64) => ({
-      url: b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`,
-      detail: "high",
-    })),
+    frames,
     prompt: promptJson,
     schema: CriticScoreSchema,
     systemPrompt: SYSTEM_PROMPT,
-    model: SEED_MODELS.vision_critic,
-    cacheKeyExtra: stableInputHash({
-      beatId: input.beat.id,
-      landmarkIds: input.anatomyGraph.landmarks.map((l) => l.id),
-      framesHash: input.frames.map((f) => f.length).join(","),
-    }),
+    cacheKeyExtra,
   });
 }
 

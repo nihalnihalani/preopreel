@@ -45,3 +45,27 @@ export const SEED_BASE_URL: string =
   process.env.ARK_BASE_URL ?? "https://ark.ap-southeast.bytepluses.com/api/v3";
 export const SEEDANCE_BASE_URL: string =
   process.env.SEEDANCE_BASE_URL ?? SEED_BASE_URL;
+
+// ─── LLM_MODELS — non-Seed LLM providers ───────────────────────────────────
+//
+// The handbook mandates LLM = Z.AI (BigModel). The hackathon-issued ZAI_API_KEY
+// is "exclusively for the glm 5.1 model" per Beta University Discord (5/1).
+// Atlas / Mara / Lyra route through src/lib/seed/zai.ts, which reads
+// process.env.ZAI_MODEL with this default. SEED_MODELS above stays untouched
+// so the legacy ARK fallback (USE_LEGACY_PROVIDERS=1) and the four media
+// surfaces (Seedance / Seedream / Speech / OmniHuman) keep their pins.
+export const LLM_MODELS = {
+  /** Atlas (Director) — Z.AI handbook stack. */
+  director_zai: "glm-5.1",
+  /** Mara (Devil's Advocate) — same model, different system prompt + temperature. */
+  devils_advocate_zai: "glm-5.1",
+  /** Lyra (Vision Critic) — multimodal. glm-5.1 is multimodal. */
+  vision_critic_zai: "glm-5.1",
+} as const;
+
+export type LlmModelKey = keyof typeof LLM_MODELS;
+export type LlmModelId = (typeof LLM_MODELS)[LlmModelKey];
+
+export const ZAI_BASE_URL: string =
+  process.env.ZAI_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4";
+export const ZAI_MODEL: string = process.env.ZAI_MODEL ?? LLM_MODELS.director_zai;

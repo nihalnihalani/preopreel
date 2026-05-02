@@ -208,7 +208,11 @@ export async function invoke(input: AtlasDirectorInput): Promise<ShotList> {
     allowlistBlock,
   );
 
-  const [{ arkChat }, { SEED_MODELS }] = await Promise.all([
+  // Handbook stack: LLM = Z.AI (glm-5.1). The legacy ARK path lives behind
+  // USE_LEGACY_PROVIDERS=1 — see src/lib/seed/ark.ts for that fallback.
+  const useLegacy = process.env.USE_LEGACY_PROVIDERS === "1";
+  const [{ zaiChat }, { arkChat }, { SEED_MODELS }] = await Promise.all([
+    import("@/lib/seed/zai"),
     import("@/lib/seed/ark"),
     import("@/lib/seed/models"),
   ]);
@@ -220,13 +224,31 @@ export async function invoke(input: AtlasDirectorInput): Promise<ShotList> {
     protocolCache: input.protocolCache,
   });
 
-  return arkChat<ShotList>({
+  if (useLegacy) {
+    return arkChat<ShotList>({
+      stage: "03-director",
+      persona: "atlas",
+      systemPrompt,
+      userContent: [{ type: "text", text: userJson }],
+      schema: ShotListSchema,
+      model: SEED_MODELS.director,
+      temperature: ATLAS_TEMPERATURE,
+      cacheKeyExtra: stableInputHash({
+        patientId: input.patient.id,
+        procedureId: input.procedure.id,
+        landmarkCount: input.anatomyGraph.landmarks.length,
+        protocolCount: input.protocolCache.length,
+        allowlistLen: input.imperativeAllowlist.length,
+      }),
+    });
+  }
+
+  return zaiChat<ShotList>({
     stage: "03-director",
     persona: "atlas",
     systemPrompt,
     userContent: [{ type: "text", text: userJson }],
     schema: ShotListSchema,
-    model: SEED_MODELS.director,
     temperature: ATLAS_TEMPERATURE,
     cacheKeyExtra: stableInputHash({
       patientId: input.patient.id,
