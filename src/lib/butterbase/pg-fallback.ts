@@ -13,7 +13,7 @@
 // stay deliberately small; client.ts builds typed accessors on top.
 // ============================================================================
 
-import { Pool, type PoolClient, type PoolConfig, type QueryResult, type QueryResultRow } from "pg";
+import type { Pool, PoolClient, PoolConfig, QueryResult, QueryResultRow } from "pg";
 
 export interface PgConfig {
   connectionString?: string;
@@ -28,34 +28,45 @@ export interface PgConfig {
 let _pool: Pool | null = null;
 
 /**
- * Build the Butterbase Postgres DSN. Prefers BUTTERBASE_DATABASE_URL
- * (full DSN) and falls back to BUTTERBASE_PROJECT_URL + BUTTERBASE_API_KEY.
+ * Thrown when BUTTERBASE_DATABASE_URL is not configured. Callers should
+ * catch this and fall through to fixture / SDK paths silently — it is the
+ * expected state when the dashboard's Postgres connection string hasn't
+ * been pasted into .env yet.
+ */
+export class NoButterbaseDatabaseUrlError extends Error {
+  constructor() {
+    super(
+      "BUTTERBASE_DATABASE_URL is not set. Butterbase exposes the Postgres " +
+        "connection string under Settings → Database in the dashboard; pg-fallback " +
+        "stays disabled until that env var is provided.",
+    );
+    this.name = "NoButterbaseDatabaseUrlError";
+  }
+}
+
+/**
+ * Build the Butterbase Postgres DSN. Requires BUTTERBASE_DATABASE_URL —
+ * we used to derive `db.{api-host}` from BUTTERBASE_PROJECT_URL, but
+ * Butterbase's actual DB hostname is per-project and not predictable, so
+ * the auto-derivation always failed at DNS lookup. Throw fast instead so
+ * the route falls through to disk fixtures without a 1s DNS timeout.
  */
 export function butterbasePostgresDsn(): string {
   const direct = process.env.BUTTERBASE_DATABASE_URL ?? "";
   if (direct.length > 0) return direct;
-
-  const projectUrl = process.env.BUTTERBASE_PROJECT_URL ?? "";
-  const apiKey = process.env.BUTTERBASE_API_KEY ?? "";
-  if (!projectUrl || !apiKey) {
-    throw new Error(
-      "[butterbase/pg-fallback] BUTTERBASE_PROJECT_URL + BUTTERBASE_API_KEY required " +
-        "(or set BUTTERBASE_DATABASE_URL directly). " +
-        "Apply promo BUTTERBASE0502 in the dashboard, then copy keys.",
-    );
-  }
-  const host = projectUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  return `postgres://postgres:${encodeURIComponent(apiKey)}@db.${host}:5432/postgres?sslmode=require`;
+  throw new NoButterbaseDatabaseUrlError();
 }
 
 /**
- * Lazy connection pool singleton.
- * Worker writes use `query()` directly; transactions use `withClient()`.
+ * Lazy connection pool singleton. `pg` is dynamic-imported so its
+ * pg-connection-string SSL deprecation + url.parse() deprecation
+ * warnings never fire when the fallback is unconfigured.
  */
-export function getPgPool(cfg?: PgConfig): Pool {
+export async function getPgPool(cfg?: PgConfig): Promise<Pool> {
   if (_pool) return _pool;
   const dsn = cfg?.connectionString ?? butterbasePostgresDsn();
-  _pool = new Pool({
+  const { Pool: PgPool } = await import("pg");
+  _pool = new PgPool({
     connectionString: dsn,
     max: cfg?.max ?? 8, // bursty worker writes; demo run < 10 concurrent
     idleTimeoutMillis: cfg?.idleTimeoutMillis ?? 30_000,
@@ -63,7 +74,7 @@ export function getPgPool(cfg?: PgConfig): Pool {
     ssl: cfg?.ssl ?? { rejectUnauthorized: false },
   });
   // Don't crash the worker if the pool emits an idle-client error.
-  _pool.on("error", (err) => {
+  _pool.on("error", (err: Error) => {
     console.error("[butterbase/pg-fallback] pool error:", err);
   });
   return _pool;
@@ -93,7 +104,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: ReadonlyArray<unknown> = [],
 ): Promise<QueryResult<T>> {
-  const pool = getPgPool();
+  const pool = await getPgPool();
   return pool.query<T>(text, params as unknown[]);
 }
 
@@ -103,7 +114,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
 export async function withClient<T>(
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
-  const pool = getPgPool();
+  const pool = await getPgPool();
   const client = await pool.connect();
   try {
     return await fn(client);

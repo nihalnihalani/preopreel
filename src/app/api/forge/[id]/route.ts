@@ -28,6 +28,10 @@ async function fetchFromButterbase(id: string): Promise<ForgeRun | null> {
       | null;
     if (mod?.getForgeRun) return await mod.getForgeRun(id);
   } catch (err) {
+    // Expected when BUTTERBASE_DATABASE_URL isn't set — fall through silently.
+    if (err instanceof Error && err.name === "NoButterbaseDatabaseUrlError") {
+      return null;
+    }
     console.warn("[api/forge/[id]] butterbase fetch failed:", err);
   }
   return null;
