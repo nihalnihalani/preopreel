@@ -648,7 +648,11 @@ export async function getForgeRun(
       );
       run = runR.rows[0];
     } catch (err) {
-      console.warn("[butterbase/client] getForgeRun Postgres failed, trying local-store:", err);
+      if (err instanceof Error && err.name === "NoButterbaseDatabaseUrlError") {
+        // Expected when no DB is configured; silently fall through to local store
+      } else {
+        console.warn("[butterbase/client] getForgeRun Postgres failed, trying local-store:", err);
+      }
     }
   }
   if (!run) {

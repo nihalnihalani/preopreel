@@ -24,6 +24,9 @@ async function fromButterbase(id: string): Promise<unknown[] | null> {
       | null;
     if (mod?.getCriticScores) return await mod.getCriticScores(id);
   } catch (err) {
+    if (err instanceof Error && err.name === "NoButterbaseDatabaseUrlError") {
+      return null;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[api/forge/critic] butterbase fetch failed: ${msg}`);
   }

@@ -93,6 +93,10 @@ async function safeInsertRow(
       });
     }
   } catch (err) {
+    if (err instanceof Error && err.name === "NoButterbaseDatabaseUrlError") {
+      // Expected when no DB is configured; local store is already written
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[api/forge] butterbase persist failed (non-fatal): ${msg}`);
   }
