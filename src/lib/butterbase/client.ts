@@ -163,6 +163,18 @@ export async function persistForgeRun(
 }
 
 /**
+ * Alias for `persistForgeRun` — the API route at src/app/api/forge/route.ts
+ * imports `insertForgeRun`. Keeping the original name for the worker's
+ * `persistForgeRun` calls AND exposing this alias for the API surface.
+ * Adopted per devil's-advocate B1 finding (2026-05-02 review).
+ */
+export async function insertForgeRun(
+  run: Partial<ForgeRun> & { id?: string },
+): Promise<string> {
+  return persistForgeRun(run);
+}
+
+/**
  * Update the granular stage cursor + optional duration/cost increment.
  * Used at every stage boundary in the worker.
  */
@@ -357,6 +369,49 @@ export async function persistCriticScore(
       pickBool(s, "acceptedWithLowScore", "accepted_with_low_score") ?? false,
     persona: "lyra",
   });
+}
+
+// ============================================================================
+// Read accessors (drive the API routes)
+// ============================================================================
+//
+// The /api/forge/[id]/* routes import these via dynamic-import. Names match
+// what those routes guard on (mod?.getCritiques, mod?.getCriticScores,
+// mod?.getAuditEntries). Each returns plain rows; route-level Zod parses
+// + field-strips so schema drift never crashes the UI.
+//
+// Adopted per devil's-advocate B1 finding (2026-05-02 review): the route
+// imports were referencing functions that didn't exist, so the DB path was
+// silently a no-op and disk fixtures were always serving.
+
+export async function getCritiques(forgeRunId: string): Promise<CritiqueRow[]> {
+  const r = await query<CritiqueRow>(
+    `SELECT * FROM critiques WHERE forge_run_id = $1 ORDER BY created_at ASC`,
+    [forgeRunId],
+  );
+  return r.rows;
+}
+
+export async function getCriticScores(
+  forgeRunId: string,
+): Promise<CriticScoreRow[]> {
+  const r = await query<CriticScoreRow>(
+    `SELECT * FROM critic_scores
+       WHERE forge_run_id = $1
+       ORDER BY beat_id, regen_attempt`,
+    [forgeRunId],
+  );
+  return r.rows;
+}
+
+export async function getAuditEntries(
+  forgeRunId: string,
+): Promise<AuditCitationRow[]> {
+  const r = await query<AuditCitationRow>(
+    `SELECT * FROM audit_citations WHERE forge_run_id = $1 ORDER BY claim_id`,
+    [forgeRunId],
+  );
+  return r.rows;
 }
 
 // ============================================================================

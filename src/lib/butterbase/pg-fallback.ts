@@ -61,17 +61,45 @@ export function butterbasePostgresDsn(): string {
  * Lazy connection pool singleton. `pg` is dynamic-imported so its
  * pg-connection-string SSL deprecation + url.parse() deprecation
  * warnings never fire when the fallback is unconfigured.
+ *
+ * SSL is auto-disabled when the DSN points at localhost / 127.0.0.1 /
+ * sslmode=disable — local Postgres doesn't speak TLS by default and
+ * forcing SSL would 500 every request.
  */
 export async function getPgPool(cfg?: PgConfig): Promise<Pool> {
   if (_pool) return _pool;
   const dsn = cfg?.connectionString ?? butterbasePostgresDsn();
-  const { Pool: PgPool } = await import("pg");
+  const pg = await import("pg");
+  const { Pool: PgPool, types: pgTypes } = pg;
+
+  // pg returns NUMERIC columns as strings by default — but our Zod schemas
+  // (CriticScore.anatomical_fidelity etc.) expect numbers, so safeParse
+  // would silently reject every row. Coerce at the driver level so the
+  // typed accessors return clean numbers. Only registered once (idempotent
+  // — pgTypes.setTypeParser is global and we gate on _pool above).
+  // Caught by the devil's-advocate W1 verification trick (2026-05-02).
+  pgTypes.setTypeParser(pgTypes.builtins.NUMERIC, (val: string) =>
+    Number.parseFloat(val),
+  );
+
+  let ssl: PoolConfig["ssl"];
+  if (cfg?.ssl !== undefined) {
+    ssl = cfg.ssl;
+  } else if (
+    /\b(localhost|127\.0\.0\.1|\[::1\])\b/.test(dsn) ||
+    /sslmode=disable/.test(dsn)
+  ) {
+    ssl = false;
+  } else {
+    ssl = { rejectUnauthorized: false };
+  }
+
   _pool = new PgPool({
     connectionString: dsn,
     max: cfg?.max ?? 8, // bursty worker writes; demo run < 10 concurrent
     idleTimeoutMillis: cfg?.idleTimeoutMillis ?? 30_000,
     connectionTimeoutMillis: cfg?.connectionTimeoutMillis ?? 5_000,
-    ssl: cfg?.ssl ?? { rejectUnauthorized: false },
+    ssl,
   });
   // Don't crash the worker if the pool emits an idle-client error.
   _pool.on("error", (err: Error) => {
