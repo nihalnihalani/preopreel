@@ -2,6 +2,22 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   reactStrictMode: true,
+  // Worker pulls in Remotion + esbuild + native compositors that Turbopack
+  // can't statically resolve. Keep them as runtime require()s.
+  serverExternalPackages: [
+    "@remotion/renderer",
+    "@remotion/bundler",
+    "@remotion/compositor-darwin-arm64",
+    "@remotion/compositor-darwin-x64",
+    "@remotion/compositor-linux-arm64-gnu",
+    "@remotion/compositor-linux-arm64-musl",
+    "@remotion/compositor-linux-x64-gnu",
+    "@remotion/compositor-linux-x64-musl",
+    "@remotion/compositor-win32-x64-msvc",
+    "esbuild",
+    "pg",
+    "ioredis",
+  ],
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },
   },

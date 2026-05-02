@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { arkChat } from "@/lib/seed/ark";
+import { zaiChat } from "@/lib/seed/zai";
 import {
   runMaraCritique,
   type CriticCritique,
@@ -26,6 +27,79 @@ const CritiqueSchema: z.ZodType<CriticCritique> = z.object({
 });
 
 const CritiqueArraySchema = z.array(CritiqueSchema);
+
+// Tolerant inbound shape — Z.AI / GLM-5.1 frequently returns:
+//   { shot_id, category, critique }
+// or
+//   { shotId, severity, message }
+// We accept any shape with shot_id + at least one of {critique,reason,message}
+// and normalize to the strict CritiqueSchema.
+const RawCritiqueItem = z
+  .object({
+    shot_id: z.union([z.string(), z.number()]).optional(),
+    shotId: z.union([z.string(), z.number()]).optional(),
+    beat_id: z.union([z.string(), z.number()]).optional(),
+    severity: z.string().optional(),
+    category: z.string().optional(),
+    excerpt: z.string().optional(),
+    reason: z.string().optional(),
+    critique: z.string().optional(),
+    message: z.string().optional(),
+    text: z.string().optional(),
+    suggested_revision: z.string().optional(),
+    suggestedRevision: z.string().optional(),
+    revision: z.string().optional(),
+  })
+  .passthrough();
+
+const ALLOWED_CATEGORIES = new Set([
+  "advice_creep",
+  "uncited_claim",
+  "ambiguity",
+  "scope_creep",
+  "anatomical_invention",
+  "population_assumption",
+  "imperative_overreach",
+  "cited_but_irrelevant",
+]);
+
+function normalizeCritiqueItem(r: z.infer<typeof RawCritiqueItem>): CriticCritique {
+  const shot_id = String(r.shot_id ?? r.shotId ?? r.beat_id ?? "");
+  const sevRaw = (r.severity ?? "warn").toLowerCase();
+  const severity: CriticCritique["severity"] =
+    sevRaw === "block" || sevRaw === "warn" || sevRaw === "info"
+      ? (sevRaw as CriticCritique["severity"])
+      : "warn";
+  const category = ALLOWED_CATEGORIES.has(r.category ?? "")
+    ? (r.category as string)
+    : "ambiguity";
+  const reason = (r.reason ?? r.critique ?? r.message ?? r.text ?? "").slice(0, 200);
+  const excerpt = (r.excerpt ?? reason).slice(0, 200);
+  const out: CriticCritique = {
+    shot_id,
+    severity,
+    category,
+    excerpt,
+    reason,
+  };
+  const rev = r.suggested_revision ?? r.suggestedRevision ?? r.revision;
+  if (rev) out.suggested_revision = rev;
+  return out;
+}
+
+const TolerantCritiqueArraySchema: z.ZodType<CriticCritique[]> = z
+  .union([
+    z.array(RawCritiqueItem).transform((arr) => arr.map(normalizeCritiqueItem)),
+    z
+      .object({ critiques: z.array(RawCritiqueItem) })
+      .transform((o) => o.critiques.map(normalizeCritiqueItem)),
+    z
+      .object({ items: z.array(RawCritiqueItem) })
+      .transform((o) => o.items.map(normalizeCritiqueItem)),
+    z
+      .object({ results: z.array(RawCritiqueItem) })
+      .transform((o) => o.results.map(normalizeCritiqueItem)),
+  ]) as z.ZodType<CriticCritique[]>;
 
 const MARA_FALLBACK_PROMPT =
   "You are Mara, Devil's Advocate. You read the Director's ShotList and " +
@@ -66,21 +140,28 @@ export async function runStage4(input: Stage4Input): Promise<Stage4Result> {
     /* persona not yet landed */
   }
 
+  const useLegacy = process.env.USE_LEGACY_PROVIDERS === "1";
   const ctx: MaraContext = {
     invokeMara: async (current) => {
-      const result = await arkChat<CriticCritique[]>({
-        stage: "stage_4_mara",
-        persona: "mara",
+      const args = {
+        stage: "stage_4_mara" as const,
+        persona: "mara" as const,
         systemPrompt,
         userContent: [
-          { type: "text", text: JSON.stringify({ shotList: current }) },
+          { type: "text" as const, text: JSON.stringify({ shotList: current }) },
         ],
         schema: CritiqueArraySchema,
         cacheKeyExtra: JSON.stringify(
           current.beats.map((b) => `${b.shot_id}:${b.narrator_line}`),
         ),
-      });
-      return result;
+      };
+      if (useLegacy) {
+        return arkChat<CriticCritique[]>(args);
+      }
+      // Z.AI / GLM-5.1 returns variant shapes (missing severity/excerpt/reason,
+      // wraps in { critiques: [...] }, etc). The tolerant schema normalizes
+      // them to CritiqueSchema before downstream consumers see them.
+      return zaiChat<CriticCritique[]>({ ...args, schema: TolerantCritiqueArraySchema });
     },
     // Atlas redraft is optional — when not provided, runMaraCritique falls
     // back to in-place suggested_revision swaps only. This keeps Stage 4

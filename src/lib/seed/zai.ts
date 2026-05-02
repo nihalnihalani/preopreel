@@ -19,7 +19,6 @@
 
 import OpenAI from "openai";
 import { z } from "zod";
-import { withReplay, hashCacheKey } from "@/lib/forge/replay";
 import { next as nextKey, rotate } from "@/lib/forge/keyRotation";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -191,84 +190,68 @@ async function doLiveCall<T>(
 
 export async function zaiChat<T = string>(opts: ZaiChatOptions<T>): Promise<T> {
   if (opts.model && opts.model !== getModel()) {
-    // Hard guard: hackathon key only authorizes glm-5.1.
     throw new ZaiConfigError(
       `zaiChat: opts.model=${opts.model} is forbidden — Z.AI hackathon key only authorizes ${getModel()}.`,
     );
   }
-  const cacheKey = hashCacheKey({
-    persona: opts.persona,
-    sys: opts.systemPrompt,
-    user: opts.userContent,
-    model: getModel(),
-    extra: opts.cacheKeyExtra ?? null,
-  });
 
-  return withReplay<T>({
-    stage: opts.stage,
-    key: cacheKey,
-    codec: "json",
-    forgeRunId: opts.forgeRunId,
-    live: async () => {
-      const client = makeClient();
+  const client = makeClient();
 
-      if (!opts.schema) {
-        const r = await doLiveCall(client, opts, undefined);
-        return r.content as unknown as T;
-      }
+  if (!opts.schema) {
+    const r = await doLiveCall(client, opts, undefined);
+    return r.content as unknown as T;
+  }
 
-      // Schema path: try strict json_schema first.
-      let firstRaw = "";
-      try {
-        const r1 = await doLiveCall(client, opts, {
-          type: "json_schema",
-          json_schema: {
-            name: opts.persona,
-            strict: true,
-            schema: { type: "object" },
-          },
-        });
-        firstRaw = r1.content;
-        const parsed1 = JSON.parse(r1.content);
-        const safe1 = opts.schema.safeParse(parsed1);
-        if (safe1.success) return safe1.data;
-      } catch (err) {
-        const status =
-          err && typeof err === "object" && "status" in err
-            ? Number((err as { status: unknown }).status)
-            : 0;
-        if (status >= 400 && status < 500 && status !== 429) {
-          // Schema-unsupported on Z.AI for some payloads — retry json_object.
-        } else if (err instanceof ZaiUpstreamError) {
-          throw err;
-        }
-      }
+  // Schema path: try strict json_schema first.
+  let firstRaw = "";
+  try {
+    const r1 = await doLiveCall(client, opts, {
+      type: "json_schema",
+      json_schema: {
+        name: opts.persona,
+        strict: true,
+        schema: { type: "object" },
+      },
+    });
+    firstRaw = r1.content;
+    const parsed1 = JSON.parse(r1.content);
+    const safe1 = opts.schema.safeParse(parsed1);
+    if (safe1.success) return safe1.data;
+  } catch (err) {
+    const status =
+      err && typeof err === "object" && "status" in err
+        ? Number((err as { status: unknown }).status)
+        : 0;
+    if (status >= 400 && status < 500 && status !== 429) {
+      // Schema-unsupported on Z.AI for some payloads — retry json_object.
+    } else if (err instanceof ZaiUpstreamError) {
+      throw err;
+    }
+  }
 
-      // Fallback: json_object + system-prompt hint.
-      const hint = schemaHint(opts.schema);
-      const r2 = await doLiveCall(
-        client,
-        opts,
-        { type: "json_object" },
-        `${opts.systemPrompt}\n\n${hint}\nReturn ONLY valid JSON.`,
-      );
-      let parsed2: unknown;
-      try {
-        parsed2 = JSON.parse(r2.content);
-      } catch {
-        throw new ZaiSchemaError(
-          `zaiChat[${opts.persona}/${opts.stage}]: invalid JSON in fallback response`,
-          firstRaw,
-          r2.content,
-        );
-      }
-      const safe2 = opts.schema.safeParse(parsed2);
-      if (safe2.success) return safe2.data;
-      throw new ZaiSchemaError(
-        `zaiChat[${opts.persona}/${opts.stage}]: safeParse failed in both attempts: ${safe2.error.message}`,
-        firstRaw,
-        r2.content,
-      );
-    },
-  });
+  // Fallback: json_object + system-prompt hint.
+  const hint = schemaHint(opts.schema);
+  const r2 = await doLiveCall(
+    client,
+    opts,
+    { type: "json_object" },
+    `${opts.systemPrompt}\n\n${hint}\nReturn ONLY valid JSON.`,
+  );
+  let parsed2: unknown;
+  try {
+    parsed2 = JSON.parse(r2.content);
+  } catch {
+    throw new ZaiSchemaError(
+      `zaiChat[${opts.persona}/${opts.stage}]: invalid JSON in fallback response`,
+      firstRaw,
+      r2.content,
+    );
+  }
+  const safe2 = opts.schema.safeParse(parsed2);
+  if (safe2.success) return safe2.data;
+  throw new ZaiSchemaError(
+    `zaiChat[${opts.persona}/${opts.stage}]: safeParse failed in both attempts: ${safe2.error.message}`,
+    firstRaw,
+    r2.content,
+  );
 }
