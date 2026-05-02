@@ -52,6 +52,24 @@ async function safeInsertRow(
   forgeRunId: string,
   demoMode: string,
 ): Promise<void> {
+  // Local-store write is unconditional — this is what makes GET /api/forge/{id}
+  // succeed for fresh uploads even when Butterbase Postgres is unreachable.
+  try {
+    const { upsertLocalRun } = await import("@/lib/butterbase/local-store");
+    await upsertLocalRun({
+      id: forgeRunId,
+      createdAt: new Date().toISOString(),
+      status: "pending",
+      stage: "pending",
+      demoMode: (demoMode as "live" | "replay" | "hybrid") ?? "live",
+      durationsMs: {},
+      costUsd: {},
+      error: null,
+    });
+  } catch (err) {
+    console.warn("[api/forge] local-store write failed:", err);
+  }
+  // Best-effort Postgres mirror via butterbase client.
   try {
     const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
       | {

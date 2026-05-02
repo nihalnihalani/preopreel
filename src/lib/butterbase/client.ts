@@ -54,6 +54,7 @@ import type { Critique, CriticScore } from "@/lib/forge/critique";
 import type { AuditEntry } from "@/lib/forge/audit";
 import type { ShotList } from "@/lib/forge/shotList";
 import type { ForgeRun } from "@/lib/forge/types";
+import { getLocalRun, upsertLocalRun } from "./local-store";
 
 // Domain alias — the worker calls this an AuditCitation in plan 05; the
 // authoritative Zod schema names it AuditEntry. We accept either shape via
@@ -160,6 +161,37 @@ export async function persistForgeRun(
 
   const inserted = await insertRow<{ id: string }>("forge_runs", row, ["id"]);
   return inserted.id;
+}
+
+/**
+ * insertForgeRun — lightweight insert called from POST /api/forge.
+ * Mirrors to local-store unconditionally so GET /api/forge/{id} always
+ * finds a row even when Butterbase Postgres is unreachable.
+ */
+export async function insertForgeRun(row: {
+  id: string;
+  status: string;
+  stage: string;
+  demoMode: string;
+}): Promise<void> {
+  const localRow: ForgeRun = {
+    id: row.id,
+    createdAt: new Date().toISOString(),
+    status: row.status as ForgeRun["status"],
+    stage: row.stage as ForgeRun["stage"],
+    demoMode: (row.demoMode as ForgeRun["demoMode"]) ?? "live",
+    durationsMs: {},
+    costUsd: {},
+    error: null,
+  };
+  // Mirror to local store first — this must not be swallowed.
+  await upsertLocalRun(localRow);
+  // Best-effort Postgres insert; failure is non-fatal (local store is the fallback).
+  try {
+    await persistForgeRun(localRow);
+  } catch (err) {
+    console.warn("[butterbase/client] Postgres insertForgeRun failed (local-store ok):", err);
+  }
 }
 
 /**
@@ -558,12 +590,24 @@ export async function mintSignedUrl(
 export async function getForgeRun(
   id: string,
 ): Promise<ForgeRunWithDetails | null> {
-  const runR = await query<ForgeRunRow>(
-    `SELECT * FROM forge_runs WHERE id = $1 LIMIT 1`,
-    [id],
-  );
-  const run = runR.rows[0];
-  if (!run) return null;
+  // In replay mode skip Postgres entirely; fall through to local-store below.
+  let run: ForgeRunRow | undefined;
+  if ((process.env.DEMO_MODE ?? "replay") !== "replay") {
+    try {
+      const runR = await query<ForgeRunRow>(
+        `SELECT * FROM forge_runs WHERE id = $1 LIMIT 1`,
+        [id],
+      );
+      run = runR.rows[0];
+    } catch (err) {
+      console.warn("[butterbase/client] getForgeRun Postgres failed, trying local-store:", err);
+    }
+  }
+  if (!run) {
+    const local = await getLocalRun(id);
+    if (local) return local as unknown as ForgeRunWithDetails;
+    return null;
+  }
 
   const [planR, patR, anaR, slR, crR, scR, acR] = await Promise.all([
     query<ProcedurePlanRow>(

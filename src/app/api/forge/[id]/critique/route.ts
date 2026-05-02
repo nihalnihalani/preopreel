@@ -17,13 +17,15 @@ interface RouteParams {
 }
 
 async function fromButterbase(id: string): Promise<unknown[] | null> {
+  if ((process.env.DEMO_MODE ?? "replay") === "replay") return null;
   try {
     const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
       | { getCritiques?: (id: string) => Promise<unknown[]> }
       | null;
     if (mod?.getCritiques) return await mod.getCritiques(id);
   } catch (err) {
-    console.warn("[api/forge/critique] butterbase fetch failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[api/forge/critique] butterbase fetch failed: ${msg}`);
   }
   return null;
 }

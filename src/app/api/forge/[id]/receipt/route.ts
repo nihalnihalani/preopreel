@@ -25,22 +25,29 @@ interface RouteParams {
 }
 
 async function fetchAuditEntries(id: string): Promise<AuditPdfInput["entries"]> {
-  // Try Butterbase first.
-  try {
-    const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
-      | { getAuditEntries?: (id: string) => Promise<unknown[]> }
-      | null;
-    if (mod?.getAuditEntries) {
-      const raw = await mod.getAuditEntries(id);
-      const out: AuditPdfInput["entries"] = [];
-      for (const item of raw) {
-        const parsed = AuditEntry.safeParse(item);
-        if (parsed.success) out.push(parsed.data);
+  // In replay mode, the Butterbase row is irrelevant — every endpoint
+  // resolves from cached fixtures under data/replay/{id}/. Skip the
+  // network call entirely so we don't spam ENOTFOUND when running
+  // hermetic / offline.
+  if ((process.env.DEMO_MODE ?? "replay") !== "replay") {
+    // Try Butterbase first.
+    try {
+      const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
+        | { getAuditEntries?: (id: string) => Promise<unknown[]> }
+        | null;
+      if (mod?.getAuditEntries) {
+        const raw = await mod.getAuditEntries(id);
+        const out: AuditPdfInput["entries"] = [];
+        for (const item of raw) {
+          const parsed = AuditEntry.safeParse(item);
+          if (parsed.success) out.push(parsed.data);
+        }
+        return out;
       }
-      return out;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[api/forge/receipt] butterbase fetch failed: ${msg}`);
     }
-  } catch (err) {
-    console.warn("[api/forge/receipt] butterbase fetch failed:", err);
   }
   // Fall back to disk.
   try {
