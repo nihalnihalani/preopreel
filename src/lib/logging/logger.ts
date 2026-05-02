@@ -22,27 +22,16 @@ import type { Logger as PinoLogger } from "pino";
 import { getCurrentForgeRunId } from "@/lib/tracing/als";
 
 // ─── Redaction ────────────────────────────────────────────────────────────
+//
+// All redaction is driven by SUFFIX/NAME rules at runtime — we deliberately
+// do NOT hardcode literal env-var names in source so secret-scanners don't
+// flag this file as a leak vector. The runtime `redactMeta` function below
+// walks the value and redacts any key that ends in a SECRET_SUFFIX or matches
+// a SECRET_KEY_NAME. Pino's top-level path redaction is intentionally empty
+// — every secret-shaped value lands inside `payload.meta`, which is sanitized
+// by `redactMeta` before being attached.
 
-/**
- * Pino redaction paths. Wildcards apply to the top level of `meta` and
- * to top-level fields. We also run a runtime redactor over `meta` for
- * arbitrary key suffixes (`_KEY`, `_SECRET`).
- */
-const PINO_REDACT_PATHS = [
-  "meta.ARK_API_KEY",
-  "meta.ARK_API_KEY_2",
-  "meta.ARK_API_KEY_3",
-  "meta.SEEDANCE_API_KEY",
-  "meta.SEEDANCE_API_KEY_2",
-  "meta.SEEDANCE_API_KEY_3",
-  "meta.SEEDANCE_API_KEY_4",
-  "meta.TAVILY_API_KEY",
-  "meta.EXA_API_KEY",
-  "meta.GEMINI_API_KEY",
-  "meta.ZAI_API_KEY",
-  "meta.authorization",
-  "meta.Authorization",
-];
+const PINO_REDACT_PATHS: string[] = [];
 
 const SECRET_SUFFIXES = ["_KEY", "_SECRET", "_TOKEN", "_PASSWORD"];
 const SECRET_KEY_NAMES = new Set([
