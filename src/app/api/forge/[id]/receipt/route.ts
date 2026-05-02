@@ -29,7 +29,7 @@ async function fetchAuditEntries(id: string): Promise<AuditPdfInput["entries"]> 
   // resolves from cached fixtures under data/replay/{id}/. Skip the
   // network call entirely so we don't spam ENOTFOUND when running
   // hermetic / offline.
-  if ((process.env.DEMO_MODE ?? "replay") !== "replay") {
+  if ((process.env.DEMO_MODE ?? "live") !== "replay") {
     // Try Butterbase first.
     try {
       const mod = (await import("@/lib/butterbase/client").catch(() => null)) as

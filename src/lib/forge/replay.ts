@@ -78,7 +78,7 @@ class HybridTimeoutError extends Error {
 // ─── Mode + budget resolution ──────────────────────────────────────────────
 
 function getDemoMode(): DemoMode {
-  const raw = (process.env.DEMO_MODE ?? "replay").toLowerCase();
+  const raw = (process.env.DEMO_MODE ?? "live").toLowerCase();
   if (raw === "live" || raw === "replay" || raw === "hybrid") return raw;
   return "replay";
 }

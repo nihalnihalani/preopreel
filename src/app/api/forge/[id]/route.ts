@@ -22,17 +22,15 @@ interface RouteParams {
 }
 
 async function fetchFromButterbase(id: string): Promise<ForgeRun | null> {
-  // In replay mode, the Butterbase row is irrelevant — every endpoint
-  // resolves from cached fixtures under data/replay/{id}/. Skip the
-  // network call entirely so we don't spam ENOTFOUND when running
-  // hermetic / offline.
-  if ((process.env.DEMO_MODE ?? "replay") === "replay") return null;
   try {
     const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
       | { getForgeRun?: (id: string) => Promise<ForgeRun | null> }
       | null;
     if (mod?.getForgeRun) return await mod.getForgeRun(id);
   } catch (err) {
+    if (err instanceof Error && err.name === "NoButterbaseDatabaseUrlError") {
+      return null;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[api/forge/[id]] butterbase fetch failed: ${msg}`);
   }
@@ -100,7 +98,7 @@ export async function GET(
         createdAt: new Date().toISOString(),
         status: "pending" as ForgeRunStatus,
         stage: "pending" as ForgeRunStatus,
-        demoMode: (process.env.DEMO_MODE ?? "replay") as ForgeRun["demoMode"],
+        demoMode: (process.env.DEMO_MODE ?? "live") as ForgeRun["demoMode"],
         durationsMs: {},
         costUsd: {},
         error: null,
