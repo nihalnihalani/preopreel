@@ -29,7 +29,74 @@ Drag the surgeon's procedure plan PDF + patient demographics card into a web for
 
 **Positioning:** informed-consent **communication tool**, not a medical device. Not diagnostic. Not advisory. The script is bounded — the AI never recommends, only explains what the surgeon already decided.
 
-## 3. Live Demo (the locked 2 minutes)
+## 3. The Critic — Self-Evaluation Before Anything Reaches the Patient ★
+
+PreOpReel is the only pre-op explainer in this hackathon with a **two-stage critic loop that gates output before the human sees it**. Every winning archetype in this competition — Reelify, CrashForensics, CareReel, Forge — has a visible critic agent. The published rubric weights *Agentic Execution* at **40%**. A planner + executor without a critic is a 2024 demo; PreOpReel ships **two** critics, both on-camera in the live demo.
+
+```
+┌──────────────┐     ┌──────────────────┐     ┌─────────────────┐     ┌────────────────┐
+│  Director    │ ──▶ │  Mara             │ ──▶ │  Renderer       │ ──▶ │  Lyra          │
+│  (Atlas)     │     │  Devil's Advocate │     │  (Seedream +    │     │  Vision Critic │
+│  drafts a    │     │  pre-render gate  │     │   Seedance)     │     │  post-render   │
+│  ShotList    │     │  blocks bad shots │     │  produces clips │     │  scores + regen│
+└──────────────┘     └──────────────────┘     └─────────────────┘     └────────┬───────┘
+                                                                               │
+                                                                  ACCEPT ◀── below threshold? ──▶ REGEN (1 budget)
+```
+
+A pre-render critic catches *script-level* errors cheaply (no Seedance cost). A post-render critic catches *render-level* errors (anatomical hallucination, glyph-soup text, drifted limb angles) that no script analysis can catch. The two stages compose: **Mara prevents the wrong content from being rendered; Lyra prevents the right content from being rendered wrong.**
+
+### 3.1 Mara — Devil's Advocate (pre-render)
+
+Seed 2.0 Pro, plan-only mode (writes critiques, never code). Reads the Director's `ShotList` and emits a typed `Critique` document **before any pixel is rendered**. Specific job: catch any line that crosses from *explaining* the surgeon's plan to *recommending* something. Few-shot at boot with 10 known-bad scripts: anything starting with "you should", "consider", "we recommend", or any narrator line without a citation pointer back to the procedure plan, the anatomy bible, or a peer-reviewed protocol.
+
+```ts
+type Critique = {
+  shot_id: string;
+  severity: "block" | "warn" | "info";
+  category:
+    | "advice_creep"             // "you should consider..."
+    | "uncited_claim"            // claim with no procedure-plan / PMID pointer
+    | "ambiguity"                // ≥2 reasonable interpretations
+    | "scope_creep"              // outside this patient's plan
+    | "anatomical_invention";    // mentions structures not in AnatomyGraph
+  excerpt: string;               // ≤200 chars from the narrator_line
+  reason: string;                // ≤200 chars; cites the rule violated
+  suggested_revision?: string;   // Mara's preferred phrasing
+};
+```
+
+Atlas applies every `block`-severity revision or kicks the shot back to redraft. **Hard cap: 1 critique round per ShotList** — no infinite loops. Outputs are persisted to `pre:critique:{forge_run_id}` and rendered into the demo HUD as a slow-scrolling sidebar so judges see Mara catching real things.
+
+### 3.2 Lyra — Vision Critic (post-render)
+
+Seed 2.0 Pro Vision over each Seedance clip. Samples 4 frames per beat and scores against the AnatomyGraph + ShotList:
+
+```ts
+type CriticScore = {
+  beat_id: string;
+  anatomical_fidelity: number;        // 0..1 — does the rendered shot match AnatomyGraph?
+  procedure_step_compliance: number;  // 0..1 — does the action match the plan's step?
+  on_screen_text_violations: number;  // count; must be 0 (glyph-soup gate)
+  feedback: string;                   // ≤120 chars; used to rebuild the next prompt
+};
+```
+
+Decision: `min(scores) < 0.75` OR `on_screen_text_violations > 0` ⇒ regenerate. **Budget: 1 regen per beat.** After that, accept and surface the score honestly. Final scores are written to `ForgeRun.deliverable.criticTrace[]` and **shown live in the demo HUD** — judges literally see Lyra reject shot 3 (anatomical fidelity 0.71 < threshold) and watch Atlas regenerate at 0.86.
+
+### 3.3 Honesty over theater
+
+When Lyra accepts a shot at 0.78 (above the 0.75 threshold but below ideal), the demo HUD displays **0.78** — not a polished green checkmark. Confidence bands appear on every anatomical overlay; below-ideal scores are surfaced rather than suppressed. This is the single biggest trust signal we have, and it's the difference between a communication tool a surgeon will actually deploy and a clever video toy.
+
+### 3.4 The line both critics enforce together
+
+PreOpReel is positioned as an **informed-consent communication tool, not a medical device**. Mara's specific veto is medical-advice creep; Lyra's is anatomical hallucination. Together they hold the device/communication-tool boundary that keeps PreOpReel out of FDA-regulated territory. **Disabling either critic in the demo path is a release blocker.** A new pipeline stage that produces user-visible output must route through Lyra; a new persona that drafts user-visible language must be reviewed by Mara. PRs that bypass either gate do not merge.
+
+### 3.5 What judges see (the demo beat at 0:50–1:00)
+
+The CriticHud renders Mara's flagged shot (excerpt + reason) on the left, Lyra's failing scores on the right, and the regen sequence in the middle — all keyed off real `pre:critique:*` and `pre:critic:*` Redis writes from the actual ForgeRun. No animation theater; the HUD is reading the same data the worker is writing. Stop the worker mid-render and the HUD freezes mid-update.
+
+## 4. Live Demo (the locked 2 minutes)
 
 | Time | Beat | Visual |
 | --- | --- | --- |
@@ -45,7 +112,7 @@ Drag the surgeon's procedure plan PDF + patient demographics card into a web for
 
 Demo case is a **synthetic phantom patient** clearly labeled as such. We never use real patient data on stage — that's both an ethical and a HIPAA constraint, and we lean into it.
 
-## 4. Why This Is Different
+## 5. Why This Is Different
 
 | Alternative | Why we beat it |
 | --- | --- |
@@ -57,7 +124,7 @@ Demo case is a **synthetic phantom patient** clearly labeled as such. We never u
 
 **Buyer is not the hospital — it's the malpractice insurance carrier subsidizing it as risk reduction.** ProAssurance + The Doctors Company + MedPro write ~$4B/year in surgical malpractice premiums. Even 0.1% of premium reallocated to consent-comms = $4M ARR.
 
-## 5. Agent Team
+## 6. Agent Team
 
 Six named agents — same lineup at build-time and runtime. Build-time uses `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; runtime instantiates the same personas as functions in `src/lib/forge/personas/*.ts`.
 
@@ -76,7 +143,7 @@ Communication contract: DMs by name (`SendMessage`), tasks via `TaskCreate`/`Tas
 
 Medical content has one failure mode: the script crosses the line from *explaining* the surgeon's plan to *recommending* something. That's the difference between a communication tool and an unregulated medical device. Mara's only job is to flag that line. Few-shot her with 10 known-bad scripts during build — anything starting with "you should" or "consider" gets rejected.
 
-## 6. Seed Model Orchestration
+## 7. Seed Model Orchestration
 
 Every Seed surface is used, and each one earns its place. Nothing is checkbox-integrated.
 
@@ -116,7 +183,7 @@ Every Seed surface is used, and each one earns its place. Nothing is checkbox-in
 - **Cut criterion**: if Phase 0.6 verification produces uncanny-valley output, drop to a static title card with VO. Trust signal > novel signal.
 - **Privacy:** surgeon photo upload is opt-in, scoped to their own clinic, with an explicit consent checkbox.
 
-## 7. Architecture
+## 8. Architecture
 
 ```
 PROCEDURE PLAN PDF + PATIENT DEMOGRAPHICS
@@ -188,7 +255,7 @@ PROCEDURE PLAN PDF + PATIENT DEMOGRAPHICS
 
 Mermaid version: `docs/telestudio_architecture_v5_fusion.mermaid` (architecture is shared across PreOpReel and SafetyReel; only personas + Stage 1 schema differ).
 
-## 8. The 12-Stage Pipeline
+## 9. The 12-Stage Pipeline
 
 | # | Stage | Owner | Model | Notes |
 | ---: | --- | --- | --- | --- |
@@ -209,7 +276,7 @@ Mermaid version: `docs/telestudio_architecture_v5_fusion.mermaid` (architecture 
 | 11b | Surgeon greeting *(opt-in)* | Atlas | OmniHuman 1.5 | ≤8s, cut if uncanny |
 | 12 | Composition + render | Lyra | Remotion | 1080p H.264 |
 
-## 9. Critic Loop & KPI
+## 10. Critic Loop & KPI
 
 The KPI is **anatomical fidelity** — explicit, on-screen, with provenance:
 
@@ -226,7 +293,7 @@ Decision: `min(scores) < 0.75` OR `on_screen_text_violations > 0` ⇒ regenerate
 
 Per Mara's condition #2, every overlay number is annotated with a confidence band from the upstream pose/extraction stage. We *show* uncertainty rather than hide it. This is the single biggest trust signal we have.
 
-## 10. Tech Stack
+## 11. Tech Stack
 
 | Layer | Choice |
 | --- | --- |
@@ -240,7 +307,7 @@ Per Mara's condition #2, every overlay number is annotated with a confidence ban
 | Schema | Zod for every cross-stage contract |
 | Lens taxonomy | Ported from `Anil-matcha/Open-Generative-AI` (MIT, attribution in `LICENSES.md`) |
 
-## 11. Build Sequence (5 days)
+## 12. Build Sequence (5 days)
 
 | Day | Owner | Deliverable |
 | ---: | --- | --- |
@@ -256,7 +323,7 @@ Per Mara's condition #2, every overlay number is annotated with a confidence ban
 
 Mara reviews each day's PR; Atlas merges or kicks back.
 
-## 12. File Map
+## 13. File Map
 
 ```
 src/
@@ -294,7 +361,7 @@ src/
     └── CitationFooter.tsx
 ```
 
-## 13. Risk Register
+## 14. Risk Register
 
 | Risk | P | Mitigation |
 | --- | ---: | --- |
@@ -307,7 +374,7 @@ src/
 | Buyer narrative ("malpractice insurer") feels indirect | Med | Lead with patient-comfort impact; back into insurer TAM math; cite ProAssurance closed-claims survey |
 | Demo case = synthetic feels manipulative | Low | Lean into it. "This is a synthetic phantom for the demo; live deployment uses anonymized scans." Honesty > theater. |
 
-## 14. Buyer / Pricing
+## 15. Buyer / Pricing
 
 - **Primary buyer:** surgical malpractice insurance carriers (ProAssurance, MedPro, The Doctors Company). Reframe: patient-explainer videos = documented-consent malpractice defense.
 - **Secondary buyer:** outpatient surgery centers, surgical telehealth platforms (Hint, Sesame).
@@ -315,7 +382,7 @@ src/
 - **Comparator:** bespoke surgical-animation studios charge $5,000–$25,000 per procedure type. We're 50–250× cheaper and personalized per patient.
 - **TAM proxy:** ~50M outpatient surgeries/year in the US × $99 = $5B addressable. Even 0.1% capture = $5M ARR.
 
-## 15. Tech for Good
+## 16. Tech for Good
 
 - **Health-equity gap:** patients with low health literacy face documented worse outcomes (Berkman et al., *Ann Intern Med*). Personalized comprehension support narrows the gap.
 - **Anxiety reduction:** pre-op anxiety correlates with longer recovery (Powell et al., *Cochrane Reviews 2023*). Better understanding reduces it.
@@ -323,7 +390,7 @@ src/
 
 This is not a feel-good wrapper. The literature is clear.
 
-## 16. Open Questions
+## 17. Open Questions
 
 - [ ] Demo case selection — synthetic phantom (we draft) or licensed simulation case?
 - [ ] OmniHuman surgeon greeting — record one (with consent) for the demo or skip to Layer 2?
@@ -331,7 +398,7 @@ This is not a feel-good wrapper. The literature is clear.
 - [ ] Tavily / Exa API keys provisioned?
 - [ ] Pricing card for the demo: $99 or $499?
 
-## 17. References
+## 18. References
 
 - v7 vertical lock plan: `docs/plans/2026-05-02-winning-vertical-v7.md`
 - v6 vertical analysis (now superseded by v7): `docs/plans/2026-05-02-winning-vertical.md`
@@ -345,7 +412,7 @@ This is not a feel-good wrapper. The literature is clear.
 - Joint Commission, *Health Literacy and Patient Safety* (2024)
 - Berkman ND et al., *Low Health Literacy and Health Outcomes: An Updated Systematic Review*, *Ann Intern Med*
 
-## 18. License
+## 19. License
 
 Source code: MIT. Lens taxonomy: ported from `Anil-matcha/Open-Generative-AI` under MIT — attribution in `LICENSES.md`.
 
