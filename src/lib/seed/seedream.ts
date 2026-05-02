@@ -82,10 +82,19 @@ function assemblePrompt(opts: SeedreamKeyframeOptions): string {
 
 // ─── Live call ─────────────────────────────────────────────────────────────
 
+// BytePlus ARK uses an OpenAI-compatible images API:
+//   POST /images/generations  -> { data: [{ url }] }
+// The pinned keyframe model accepts {model, prompt, size, seed?, image?}.
+// Refs are merged into the prompt as a clause; the v4 endpoint does not
+// take a separate refs[] array. Anatomical/style refs are still surfaced
+// to keep the cache key stable.
 interface SeedreamApiResponse {
-  image_url?: string;
-  width?: number;
-  height?: number;
+  data?: Array<{ url?: string; b64_json?: string }>;
+  error?: { message?: string };
+}
+
+function pickSize(aspect: "16:9" | "9:16"): string {
+  return aspect === "16:9" ? "1920x1080" : "1080x1920";
 }
 
 async function liveGenerate(
@@ -94,18 +103,26 @@ async function liveGenerate(
   model: SeedModelId,
 ): Promise<SeedreamResult> {
   const apiKey = nextKey("ark");
-  const refs = [
-    ...(opts.anatomical_refs ?? []).map((r) => ({ url: r.url, weight: r.weight ?? 1.0 })),
-    ...(opts.style_refs ?? []).map((r) => ({ url: r.url, weight: r.weight ?? 0.6 })),
-  ];
-  const body = {
+  const aspect = opts.aspect_ratio ?? "16:9";
+  const size = pickSize(aspect);
+  // Only pass refs that the upstream image API can actually fetch. Stub URLs
+  // from dev fixtures (example.invalid, replay://) get dropped; otherwise
+  // Seedream returns 400 InvalidParameter for the unreachable host.
+  const isFetchable = (u: string | undefined): u is string =>
+    !!u &&
+    /^https?:\/\//.test(u) &&
+    !/example\.invalid|replay:\/\/|localhost|127\.0\.0\.1/.test(u);
+  const firstRef =
+    [opts.anatomical_refs?.[0]?.url, opts.style_refs?.[0]?.url].find(isFetchable);
+  const body: Record<string, unknown> = {
     model,
     prompt,
-    refs,
-    aspect_ratio: opts.aspect_ratio ?? "16:9",
-    seed: opts.seed,
+    size,
+    response_format: "url",
   };
-  const res = await fetch(`${SEED_BASE_URL}/seedream/generate`, {
+  if (typeof opts.seed === "number") body.seed = opts.seed;
+  if (firstRef) body.image = firstRef;
+  const res = await fetch(`${SEED_BASE_URL}/images/generations`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -126,17 +143,22 @@ async function liveGenerate(
     );
   }
   const j = (await res.json()) as SeedreamApiResponse;
-  const imageUrl = j.image_url ?? "";
+  const imageUrl = j.data?.[0]?.url ?? "";
   let bytes = new Uint8Array(0);
   if (imageUrl) {
     const img = await fetch(imageUrl, { signal: AbortSignal.timeout(60_000) });
     if (img.ok) bytes = new Uint8Array(await img.arrayBuffer());
+  } else if (j.data?.[0]?.b64_json) {
+    bytes = Buffer.from(j.data[0].b64_json, "base64");
   }
+  const [wStr, hStr] = size.split("x");
+  const w = Number.parseInt(wStr ?? "1920", 10);
+  const h = Number.parseInt(hStr ?? "1080", 10);
   return {
     bytes,
     meta: {
-      width: j.width ?? 1920,
-      height: j.height ?? 1080,
+      width: w,
+      height: h,
       prompt_used: prompt,
       cost_estimate_usd: 0.02,
       url: imageUrl,

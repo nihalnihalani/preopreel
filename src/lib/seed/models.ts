@@ -15,11 +15,11 @@ export const SEED_MODELS = {
   /** Mara (Devil's Advocate) — same model, different system prompt + temperature. */
   vision_critic: "seed-2.0-pro",
   /** Seedream Tier-0 keyframe anchor. NEVER skipped — Invariant 2 sub-rule. */
-  keyframes: "seedream-5.0-lite",
+  keyframes: "seedream-4-0-250828",
   /** Seedance per-beat I2V / T2V-with-ref. Naked T2V is forbidden. */
-  video: "seedance-2.0",
+  video: "seedance-1-0-pro-250528",
   /** Seedance long-beat chained generation (>5s). request_id chaining. */
-  video_extend: "seedance-2.0-extend",
+  video_extend: "seedance-1-0-pro-250528",
   /** Seed Speech narration. Bounded to plan corpus by Mara/Lyra. */
   speech: "seed-speech-2.0",
   /** OmniHuman optional surgeon greeting (≤8s, opt-in). Layer-2 only. */

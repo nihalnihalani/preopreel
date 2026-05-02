@@ -11,7 +11,7 @@ for PORT in 3000 3001; do
     kill -9 ${PIDS} 2>/dev/null || true
     # Wait briefly; if anything still listening, retry once.
     sleep 0.3
-    PIDS2="$(lsof -ti tcp:${PORT} 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
+    PIDS2="$({ lsof -ti tcp:${PORT} 2>/dev/null || true; } | tr '\n' ' ' | sed 's/ *$//')"
     if [[ -n "${PIDS2}" ]]; then
       echo "[run.sh] still listening on :${PORT}: ${PIDS2} — force kill"
       kill -9 ${PIDS2} 2>/dev/null || true
