@@ -89,7 +89,13 @@ export const ForgeRun = z
     costUsd: CostUsd,
     error: z.string().nullable(), // null until status="failed"
   })
-  .strict();
+  // .passthrough() because GET /api/forge/{id} joins extra columns
+  // (procedure_plan, shot_lists, critiques, critic_scores,
+  // audit_citations, signed URLs) when butterbase resolves the row.
+  // The client `useForgeRun` only needs the core ForgeRun shape; rejecting
+  // those extras was causing safeParse to fail → undefined data →
+  // refetchInterval polling forever even though status="done".
+  .passthrough();
 export type ForgeRun = z.infer<typeof ForgeRun>;
 
 // ─── SourceType ─────────────────────────────────────────────
