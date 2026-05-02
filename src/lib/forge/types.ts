@@ -75,7 +75,12 @@ export type CostUsd = z.infer<typeof CostUsd>;
 // "stage" is the granular cursor; "status" is the coarse state machine.
 export const ForgeRun = z
   .object({
-    id: z.string().uuid(), // canonical ForgeRun id
+    // Canonical ForgeRun id. Either a UUID (live uploads) or a slug
+    // (deterministic demo runs like "demo-hip-replacement"). The DB
+    // column is `text` so slugs double as primary keys for the demo
+    // path — see scripts/seed_local_db.ts. Constrain length to match
+    // the strict ≤64 char limits used elsewhere in the schema layer.
+    id: z.string().min(1).max(64),
     createdAt: z.string().datetime({ offset: true }), // ISO 8601 with TZ
     status: ForgeRunStatus,
     stage: ForgeRunStatus, // current stage cursor
