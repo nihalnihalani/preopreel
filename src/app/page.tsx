@@ -1,8 +1,8 @@
 // app/page.tsx — landing page.
 //
-// Per plan 04 §A.1:
+// Per plan 04 §A.1 (post-2026-05-02 Option-A demo-CTA removal):
 //   - No signup, click-to-use.
-//   - Big hero with tagline + "Try the demo case" CTA → /forge?demo=hip-replacement
+//   - Big hero with tagline + primary "Upload your own" CTA → /forge
 //   - Four pillars (the four invariants) as cards
 //   - Seed lineup row
 //   - Butterbase + promo BUTTERBASE0502 + submission butterbase0502 footer
@@ -86,17 +86,11 @@ export default function LandingPage() {
 
         <div className="flex flex-col items-center gap-3 sm:flex-row">
           <Link
-            href="/forge?demo=hip-replacement"
+            href="/forge"
             className="group inline-flex items-center gap-2 rounded-lg bg-critic-lyra px-6 py-3 text-base font-semibold text-ink-950 shadow-lg shadow-critic-lyra/20 transition-all hover:bg-critic-lyra/90 hover:shadow-critic-lyra/30"
           >
-            Try the demo case
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-          </Link>
-          <Link
-            href="/forge"
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-900/60 px-6 py-3 text-base font-medium text-clinical-100 transition-colors hover:border-clinical-300/40 hover:bg-ink-800"
-          >
             Upload your own
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
           </Link>
         </div>
 
