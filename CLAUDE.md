@@ -4,17 +4,21 @@
 
 **PreOpReel** — A meta-agentic video pipeline. Drop a surgeon's procedure-plan PDF and a patient demographics card into a web form; PreOpReel synthesizes a 60–90 second personalized, anatomically-grounded, audit-trailed pre-operative explainer the patient watches before signing consent. Treat this repo as hackathon-grade software with production-shaped pieces (audit-trail PDF, citation-bound narration, vision-critic gating), not a finished medical product.
 
-**Hackathon:** Beta University AI Lab — **Seed Agents Challenge** | 2026-05-02 | Computer History Museum, Mountain View
-**Track:** Track 2 — Content Automation (AI-Powered Pipelines). Fallback: Track 1 — AI Video Agents.
-**Submission format:** 2-minute prototype demo video — 1:00 live demo + 0:30 architecture + 0:30 vision.
+**Hackathon:** Beta Super Hackathon | 2026-05-02 | 2nd Floor, Computer History Museum, Mountain View
+**Track:** Track 2 — AI Content Automation. Fallback: Track 1 — AI Video Agents (Vertical).
+**Submission format (per the participant handbook):** Butterbase MCP submission with code `butterbase0502` (lowercase). **Exactly 3 slides** (Team intro / Product overview / Demo with embedded video ≤2 minutes). File access "Anyone can view". 1 PM submission deadline; 1–2 PM late window with no demo-slot guarantee. Pitch is 3 minutes, Q&A is none, **no live demos** — only the submitted video plays at Demo Day.
 **Tagline:** *"The 90-second animated explainer your surgeon never had time to make."*
-**Judging weights (reverse-engineer for these):**
+**Judging weights (handbook-authoritative — overrides any 40/40/20 phrasing in older docs):**
 
-| Category | Weight |
-| --- | ---: |
-| Video Output Quality | 40% |
-| Agentic Execution | 40% |
-| Demo & Presentation | 20% |
+| Dimension | Weight | Winning Standard | Red Flag |
+| --- | ---: | --- | --- |
+| Tech Execution | 30% | Deep API integration; autonomous agentic reasoning | Shallow UI wrappers; hardcoded logic |
+| GTM & Moat | 25% | Laser-focused vertical; clear SaaS distribution | "Video AI for everyone"; no moat |
+| Continuity | 20% | Scalable build; clear 7-day iteration plan | Throwaway hacks; no roadmap |
+| UX Innovation | 15% | Novel low-friction interaction paradigms | Clunky config; high manual effort |
+| Demo Impact | 10% | High-signal pitch; functional outcome on tape | Fluff; failed video |
+
+**What this rubric implies for scope priorities:** Tech Execution still rewards the agentic critic loop (Invariant 1). But **GTM-Moat (25%) + Continuity (20%) = 45%** of the score and are largely *deck-resident* — see `docs/gtm-moat.md` and `docs/seven-day-roadmap.md` for the artifacts that earn those points. Demo Impact is only 10%, so over-polishing the 2-min video past "clearly working + clearly agentic" has diminishing returns.
 
 **Primary references:**
 - [README.md](./README.md) — public pitch + technical spec (12-stage pipeline, agent team, sponsor map, file map, risk register)
@@ -149,7 +153,7 @@ Don't pre-create empty folders. Scaffold each phase as needed.
 
 #### Invariant 1 — Critic Loop Is Mandatory ★
 
-**The single most important architectural invariant in this repo.** Every winning archetype in this hackathon — Reelify, CrashForensics, CareReel, Forge — has a visible critic agent that gates output before the human sees it. The published rubric weights this at **40% (Agentic Execution)**. PreOpReel runs **two critic stages**, both wired into the demo HUD:
+**The single most important architectural invariant in this repo.** Every winning archetype in this hackathon — Reelify, CrashForensics, CareReel, Forge — has a visible critic agent that gates output before the human sees it. The handbook rubric weights *Tech Execution* at **30%** and explicitly rewards "autonomous agentic reasoning"; the critic loop is how PreOpReel earns those points. PreOpReel runs **two critic stages**, both visible in the recorded demo:
 
 1. **Pre-render critic — Mara (Devil's Advocate)** — Seed 2.0 Pro, plan-only mode. Reads the Director's `ShotList` and emits a typed `Critique` document. Specific job: catch any line that crosses from *explaining* the surgeon's plan to *recommending* something. Few-shot her with 10 known-bad scripts (any line starting with "you should" / "consider" / "recommend") at boot.
 2. **Post-render critic — Lyra (Vision Critic)** — Seed 2.0 Pro Vision over each Seedance clip. Scores `{anatomical_fidelity, procedure_step_compliance, on_screen_text_violations, feedback}` against the `AnatomyGraph` + `ShotList`. Decision: `min(scores) < CRITIC_FIDELITY_THRESHOLD` OR `on_screen_text_violations > 0` ⇒ regenerate (1 regen budget per beat). Final scores written to `ForgeRun.deliverable.criticTrace[]` and shown live in `CriticHud.tsx`.
@@ -158,8 +162,8 @@ Don't pre-create empty folders. Scaffold each phase as needed.
 
 - A new pipeline stage that produces user-visible output must go through Lyra before acceptance. PRs that bypass the critic must not merge.
 - A new persona that drafts user-visible language must be reviewed by Mara before render. PRs that bypass Mara must not merge.
-- Critic output is not optional UI — `CriticHud.tsx` is on-camera during the 0:50–1:00 demo beat.
-- "Critic disabled in dev" is fine; "critic disabled in demo" is a release blocker.
+- Critic output is not optional UI — `CriticHud.tsx` is on-camera during the 0:50–1:00 beat of the recorded video.
+- "Critic disabled in dev" is fine; "critic disabled in the recorded video" is a release blocker.
 
 **Why:** the rubric. Judges compare us against winning archetypes that all show their work. A planner + executor without a critic looks like a 2024 demo.
 

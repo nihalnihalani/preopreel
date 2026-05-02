@@ -31,7 +31,7 @@ Drag the surgeon's procedure plan PDF + patient demographics card into a web for
 
 ## 3. The Critic — Self-Evaluation Before Anything Reaches the Patient ★
 
-PreOpReel is the only pre-op explainer in this hackathon with a **two-stage critic loop that gates output before the human sees it**. Every winning archetype in this competition — Reelify, CrashForensics, CareReel, Forge — has a visible critic agent. The published rubric weights *Agentic Execution* at **40%**. A planner + executor without a critic is a 2024 demo; PreOpReel ships **two** critics, both on-camera in the live demo.
+PreOpReel is the only pre-op explainer in this hackathon with a **two-stage critic loop that gates output before the human sees it**. Every winning archetype in this competition — Reelify, CrashForensics, CareReel, Forge — has a visible critic agent. The Beta Super Hackathon rubric weights *Tech Execution* at **30%** and rewards "autonomous agentic reasoning" specifically; *GTM & Moat* (25%) rewards a laser-focused vertical, which surgical pre-op consent is. A planner + executor without a critic is a 2024 demo; PreOpReel ships **two** critics, both on-camera in the submitted video.
 
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌─────────────────┐     ┌────────────────┐
