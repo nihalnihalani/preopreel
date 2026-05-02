@@ -258,6 +258,12 @@ import * as bbClient from "@/lib/butterbase/client";
 let pool: FakePool;
 
 beforeEach(() => {
+  // tests/setup.ts forces DEMO_MODE=replay globally so persona tests don't
+  // hit live Seed; here we're round-tripping through the FakePool, so we
+  // need the Postgres branch in getForgeRun (which is gated on
+  // DEMO_MODE !== "replay"). Restore happens via vi.unstubAllEnvs after
+  // each test (vitest auto-cleans stubs).
+  vi.stubEnv("DEMO_MODE", "live");
   pool = new FakePool();
   // Cast through unknown — FakePool implements only the surface used by client.ts.
   setPgPool(pool as unknown as Parameters<typeof setPgPool>[0]);
