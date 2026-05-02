@@ -54,6 +54,7 @@ import type { Critique, CriticScore } from "@/lib/forge/critique";
 import type { AuditEntry } from "@/lib/forge/audit";
 import type { ShotList } from "@/lib/forge/shotList";
 import type { ForgeRun } from "@/lib/forge/types";
+import { getLocalRun, upsertLocalRun } from "./local-store";
 
 // Domain alias — the worker calls this an AuditCitation in plan 05; the
 // authoritative Zod schema names it AuditEntry. We accept either shape via
@@ -163,15 +164,34 @@ export async function persistForgeRun(
 }
 
 /**
- * Alias for `persistForgeRun` — the API route at src/app/api/forge/route.ts
- * imports `insertForgeRun`. Keeping the original name for the worker's
- * `persistForgeRun` calls AND exposing this alias for the API surface.
- * Adopted per devil's-advocate B1 finding (2026-05-02 review).
+ * insertForgeRun — lightweight insert called from POST /api/forge.
+ * Mirrors to local-store unconditionally so GET /api/forge/{id} always
+ * finds a row even when Butterbase Postgres is unreachable.
  */
-export async function insertForgeRun(
-  run: Partial<ForgeRun> & { id?: string },
-): Promise<string> {
-  return persistForgeRun(run);
+export async function insertForgeRun(row: {
+  id: string;
+  status: string;
+  stage: string;
+  demoMode: string;
+}): Promise<void> {
+  const localRow: ForgeRun = {
+    id: row.id,
+    createdAt: new Date().toISOString(),
+    status: row.status as ForgeRun["status"],
+    stage: row.stage as ForgeRun["stage"],
+    demoMode: (row.demoMode as ForgeRun["demoMode"]) ?? "live",
+    durationsMs: {},
+    costUsd: {},
+    error: null,
+  };
+  // Mirror to local store first — this must not be swallowed.
+  await upsertLocalRun(localRow);
+  // Best-effort Postgres insert; failure is non-fatal (local store is the fallback).
+  try {
+    await persistForgeRun(localRow);
+  } catch (err) {
+    console.warn("[butterbase/client] Postgres insertForgeRun failed (local-store ok):", err);
+  }
 }
 
 /**
@@ -375,16 +395,19 @@ export async function persistCriticScore(
 // Read accessors (drive the API routes)
 // ============================================================================
 //
-// The /api/forge/[id]/* routes import these via dynamic-import. Names match
-// what those routes guard on (mod?.getCritiques, mod?.getCriticScores,
-// mod?.getAuditEntries). Each returns plain rows; route-level Zod parses
-// + field-strips so schema drift never crashes the UI.
-//
-// Adopted per devil's-advocate B1 finding (2026-05-02 review): the route
-// imports were referencing functions that didn't exist, so the DB path was
-// silently a no-op and disk fixtures were always serving.
+// /api/forge/[id]/{critique,critic,receipt}/route.ts dynamic-import these.
+// Names match the route guards (mod?.getCritiques, mod?.getCriticScores,
+// mod?.getAuditEntries). Without these exports the routes silently no-op
+// the DB path and serve disk fixtures (devil's-advocate B1, 2026-05-02).
+// In replay mode we skip Postgres entirely so the offline / no-DB path
+// stays clean — same shape as fetchFromButterbase in the [id] route.
+
+function isReplayMode(): boolean {
+  return (process.env.DEMO_MODE ?? "replay") === "replay";
+}
 
 export async function getCritiques(forgeRunId: string): Promise<CritiqueRow[]> {
+  if (isReplayMode()) return [];
   const r = await query<CritiqueRow>(
     `SELECT * FROM critiques WHERE forge_run_id = $1 ORDER BY created_at ASC`,
     [forgeRunId],
@@ -395,6 +418,7 @@ export async function getCritiques(forgeRunId: string): Promise<CritiqueRow[]> {
 export async function getCriticScores(
   forgeRunId: string,
 ): Promise<CriticScoreRow[]> {
+  if (isReplayMode()) return [];
   const r = await query<CriticScoreRow>(
     `SELECT * FROM critic_scores
        WHERE forge_run_id = $1
@@ -407,6 +431,7 @@ export async function getCriticScores(
 export async function getAuditEntries(
   forgeRunId: string,
 ): Promise<AuditCitationRow[]> {
+  if (isReplayMode()) return [];
   const r = await query<AuditCitationRow>(
     `SELECT * FROM audit_citations WHERE forge_run_id = $1 ORDER BY claim_id`,
     [forgeRunId],
@@ -613,12 +638,24 @@ export async function mintSignedUrl(
 export async function getForgeRun(
   id: string,
 ): Promise<ForgeRunWithDetails | null> {
-  const runR = await query<ForgeRunRow>(
-    `SELECT * FROM forge_runs WHERE id = $1 LIMIT 1`,
-    [id],
-  );
-  const run = runR.rows[0];
-  if (!run) return null;
+  // In replay mode skip Postgres entirely; fall through to local-store below.
+  let run: ForgeRunRow | undefined;
+  if ((process.env.DEMO_MODE ?? "replay") !== "replay") {
+    try {
+      const runR = await query<ForgeRunRow>(
+        `SELECT * FROM forge_runs WHERE id = $1 LIMIT 1`,
+        [id],
+      );
+      run = runR.rows[0];
+    } catch (err) {
+      console.warn("[butterbase/client] getForgeRun Postgres failed, trying local-store:", err);
+    }
+  }
+  if (!run) {
+    const local = await getLocalRun(id);
+    if (local) return local as unknown as ForgeRunWithDetails;
+    return null;
+  }
 
   const [planR, patR, anaR, slR, crR, scR, acR] = await Promise.all([
     query<ProcedurePlanRow>(

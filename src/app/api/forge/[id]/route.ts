@@ -22,19 +22,30 @@ interface RouteParams {
 }
 
 async function fetchFromButterbase(id: string): Promise<ForgeRun | null> {
+  // In replay mode, the Butterbase row is irrelevant — every endpoint
+  // resolves from cached fixtures under data/replay/{id}/. Skip the
+  // network call entirely so we don't spam ENOTFOUND when running
+  // hermetic / offline.
+  if ((process.env.DEMO_MODE ?? "replay") === "replay") return null;
   try {
     const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
       | { getForgeRun?: (id: string) => Promise<ForgeRun | null> }
       | null;
     if (mod?.getForgeRun) return await mod.getForgeRun(id);
   } catch (err) {
-    // Expected when BUTTERBASE_DATABASE_URL isn't set — fall through silently.
-    if (err instanceof Error && err.name === "NoButterbaseDatabaseUrlError") {
-      return null;
-    }
-    console.warn("[api/forge/[id]] butterbase fetch failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[api/forge/[id]] butterbase fetch failed: ${msg}`);
   }
   return null;
+}
+
+async function fetchFromLocalStore(id: string): Promise<ForgeRun | null> {
+  try {
+    const { getLocalRun } = await import("@/lib/butterbase/local-store");
+    return await getLocalRun(id);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchFromReplay(id: string): Promise<ForgeRun | null> {
@@ -76,6 +87,7 @@ export async function GET(
   const include = url.searchParams.get("include");
 
   let run = await fetchFromButterbase(id);
+  if (!run) run = await fetchFromLocalStore(id);
   if (!run) run = await fetchFromReplay(id);
 
   if (!run) {

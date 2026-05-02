@@ -38,13 +38,13 @@ async function safeEnqueue(forgeRunId: string, source: "fixture" | "upload"): Pr
   try {
     // Dynamic import so a missing module doesn't tank the whole route.
     const mod = (await import("@worker/queue").catch(() => null)) as
-      | { enqueueForgeRun?: (id: string, src: string) => Promise<void> }
+      | { enqueue?: (id: string) => Promise<void> }
       | null;
-    if (mod?.enqueueForgeRun) {
-      await mod.enqueueForgeRun(forgeRunId, source);
+    if (mod?.enqueue) {
+      await mod.enqueue(forgeRunId);
     }
   } catch (err) {
-    console.warn("[api/forge] enqueue failed (non-fatal):", err);
+    console.warn(`[api/forge] enqueue failed (non-fatal, source=${source}):`, err);
   }
 }
 
@@ -52,27 +52,45 @@ async function safeInsertRow(
   forgeRunId: string,
   demoMode: string,
 ): Promise<void> {
+  // Local-store write is unconditional — this is what makes GET /api/forge/{id}
+  // succeed for fresh uploads even when Butterbase Postgres is unreachable.
+  try {
+    const { upsertLocalRun } = await import("@/lib/butterbase/local-store");
+    await upsertLocalRun({
+      id: forgeRunId,
+      createdAt: new Date().toISOString(),
+      status: "pending",
+      stage: "pending",
+      demoMode: (demoMode as "live" | "replay" | "hybrid") ?? "live",
+      durationsMs: {},
+      costUsd: {},
+      error: null,
+    });
+  } catch (err) {
+    console.warn("[api/forge] local-store write failed:", err);
+  }
+  // Best-effort Postgres mirror via butterbase client.
   try {
     const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
       | {
-          insertForgeRun?: (row: {
+          persistForgeRun?: (row: {
             id: string;
             status: string;
             stage: string;
             demoMode: string;
-          }) => Promise<void>;
+          }) => Promise<string>;
         }
       | null;
-    if (mod?.insertForgeRun) {
-      await mod.insertForgeRun({
+    if (mod?.persistForgeRun) {
+      await mod.persistForgeRun({
         id: forgeRunId,
-        status: "pending",
-        stage: "pending",
-        demoMode,
+        status: "queued",
+        stage: "intake",
+        demoMode: demoMode as "live" | "replay" | "hybrid",
       });
     }
   } catch (err) {
-    console.warn("[api/forge] butterbase insert failed (non-fatal):", err);
+    console.warn("[api/forge] butterbase persist failed (non-fatal):", err);
   }
 }
 
