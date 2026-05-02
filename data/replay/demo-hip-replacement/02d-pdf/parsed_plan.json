@@ -1,0 +1,9 @@
+{
+  "forge_run_id": "demo-hip-replacement",
+  "stage": "02d-pdf",
+  "key": "parsed_plan",
+  "synthesized_by": "prewarm_demo.py",
+  "synthetic_phantom": true,
+  "pages": 12,
+  "section_count": 24
+}

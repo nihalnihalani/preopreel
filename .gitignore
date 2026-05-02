@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Demo artifacts (large; backed by manifest.json)
+data/replay/**/*.mp4
+data/replay/**/*.png
+data/replay/**/*.wav
+data/explainers/
+data/keyrot.json
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage/
+playwright-report/
+test-results/
+
+# Backup video binary stays committed (5 PM rule); fingerprint stays committed
+!docs/demo-backup.mp4
+!docs/demo-backup.fingerprint.json

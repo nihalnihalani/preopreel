@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "claude-opus-4-7",
+  "experimental": {
+    "agentTeams": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/block-seed-id-leak.mjs",
+            "description": "Invariant 2 — blocks Seed model IDs outside src/lib/seed/models.ts"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run *:*)",
+      "Bash(npx *:*)",
+      "Bash(tsx *:*)",
+      "Bash(python3 *:*)",
+      "Bash(./scripts/*:*)",
+      "Bash(git *:*)",
+      "Bash(gh *:*)"
+    ]
+  }
+}

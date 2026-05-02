@@ -1,0 +1,138 @@
+/* PreOpReel — globals.css
+ * Tailwind v4 imports + dark-mode tokens.
+ * "Clinical but not sterile": deep ink background, teal-cyan critical accents,
+ * warm amber for the synthetic-phantom badge / caution surfaces.
+ *
+ * Design tokens map to the Tailwind config in /tailwind.config.ts. Anything
+ * defined as a CSS variable here is also exposed on the dark surface so
+ * Remotion components (server-rendered) can read the same palette.
+ */
+
+@import "tailwindcss";
+
+/* Tailwind v4 dark-class strategy — opt-in via the `dark` class on <html>. */
+@variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    /* Fallback (light) — never used in production demo, included only so
+     * SSR before the .dark class is hydrated doesn't render with default
+     * Tailwind off-white that flashes on stage projectors. */
+    color-scheme: dark;
+  }
+
+  html {
+    /* Force dark mode for May 2 demo per plan 04 §C-7. */
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    height: 100%;
+    background-color: #0a0e14;        /* ink-950 */
+    color: #e8eef5;                   /* clinical-100 */
+    font-family: var(--font-sans, "Inter", system-ui, sans-serif);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  /* Readable JSON / citation type face */
+  code,
+  pre,
+  kbd,
+  samp,
+  .font-mono {
+    font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  }
+
+  /* Lyra-grade SSE pulse — soft and brief; non-distracting on stage. */
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(58, 167, 146, 0.55);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(58, 167, 146, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(58, 167, 146, 0);
+    }
+  }
+
+  /* Reconnecting badge — slow amber blink so judges notice but it doesn't
+   * scream "broken". Mara B.7 surface. */
+  @keyframes blink-amber {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  .ring-pulse {
+    animation: pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .blink-amber {
+    animation: blink-amber 1.4s ease-in-out infinite;
+  }
+
+  /* Scrollbars — subtle; we don't want them stealing the eye. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(232, 238, 245, 0.08);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(232, 238, 245, 0.18);
+  }
+
+  /* Focus ring — clinical teal, never default browser blue. */
+  :focus-visible {
+    outline: 2px solid #3aa792;       /* critic.lyra */
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  /* Glass-card surface — used by HUD panels. Half-tone gradient over a
+   * very dark navy so the type stays legible on a stage projector. */
+  .surface-card {
+    background:
+      linear-gradient(180deg, rgba(26, 33, 44, 0.85) 0%, rgba(15, 20, 27, 0.92) 100%);
+    border: 1px solid rgba(159, 179, 200, 0.08);
+    box-shadow:
+      0 1px 0 rgba(232, 238, 245, 0.04) inset,
+      0 8px 24px -16px rgba(0, 0, 0, 0.55);
+  }
+
+  .surface-card-hover:hover {
+    border-color: rgba(159, 179, 200, 0.18);
+  }
+
+  /* Mono numeric column — fixed-width digits for score tables that update
+   * live without jitter. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}

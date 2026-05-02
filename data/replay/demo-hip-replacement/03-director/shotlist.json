@@ -1,0 +1,85 @@
+{
+  "forge_run_id": "demo-hip-replacement",
+  "logline": "A 75-second walkthrough of your hip replacement, personalized to your anatomy and your surgeon's plan.",
+  "total_duration_seconds": 75,
+  "beats": [
+    {
+      "id": "shot_1",
+      "procedure_step_id": "step-1",
+      "anatomical_focus": "posterior_hip_capsule",
+      "camera_angle": "lateral_decubitus_wide",
+      "duration_seconds": 10,
+      "narrator_line": "Your surgeon will make a curved incision along the posterior aspect of your right hip to access the joint.",
+      "citations": [
+        { "source_type": "procedure_plan_section", "pointer": "§5.1" },
+        { "source_type": "procedure_plan_section", "pointer": "§4.1" }
+      ],
+      "confidence_overlay": { "lo": 0.82, "hi": 0.94, "label": "High Confidence" }
+    },
+    {
+      "id": "shot_2",
+      "procedure_step_id": "step-2",
+      "anatomical_focus": "femoral_head",
+      "camera_angle": "medium_close_anterolateral",
+      "duration_seconds": 11,
+      "narrator_line": "After opening the joint capsule, your surgeon gently dislocates the worn femoral head to expose the joint.",
+      "citations": [
+        { "source_type": "procedure_plan_section", "pointer": "§5.2" },
+        { "source_type": "procedure_plan_section", "pointer": "§3.2" }
+      ],
+      "confidence_overlay": { "lo": 0.78, "hi": 0.91, "label": "High Confidence" }
+    },
+    {
+      "id": "shot_3",
+      "procedure_step_id": "step-3",
+      "anatomical_focus": "femoral_neck",
+      "camera_angle": "macro_medial",
+      "duration_seconds": 12,
+      "narrator_line": "An oscillating saw removes the damaged femoral neck at the angle planned for your anatomy.",
+      "citations": [
+        { "source_type": "procedure_plan_section", "pointer": "§5.3" },
+        { "source_type": "procedure_plan_section", "pointer": "§3.3" }
+      ],
+      "confidence_overlay": { "lo": 0.51, "hi": 0.62, "label": "Lower Confidence" }
+    },
+    {
+      "id": "shot_4",
+      "procedure_step_id": "step-4",
+      "anatomical_focus": "acetabulum",
+      "camera_angle": "down_the_socket",
+      "duration_seconds": 14,
+      "narrator_line": "Your surgeon prepares the socket and places the new cup; you should expect the joint to feel different at first.",
+      "citations": [
+        { "source_type": "procedure_plan_section", "pointer": "§5.4" },
+        { "source_type": "pmid", "pointer": "PMID:34567890" }
+      ],
+      "confidence_overlay": { "lo": 0.81, "hi": 0.93, "label": "High Confidence" }
+    },
+    {
+      "id": "shot_5",
+      "procedure_step_id": "step-6",
+      "anatomical_focus": "femoral_component",
+      "camera_angle": "wide_orthogonal",
+      "duration_seconds": 14,
+      "narrator_line": "The new femoral stem is seated in your thighbone and the surgeon checks fit and stability with a trial reduction.",
+      "citations": [
+        { "source_type": "procedure_plan_section", "pointer": "§5.5" },
+        { "source_type": "procedure_plan_section", "pointer": "§5.6" }
+      ],
+      "confidence_overlay": { "lo": 0.79, "hi": 0.90, "label": "High Confidence" }
+    },
+    {
+      "id": "shot_6",
+      "procedure_step_id": "step-7",
+      "anatomical_focus": "posterior_capsule_repair",
+      "camera_angle": "close_posterior",
+      "duration_seconds": 14,
+      "narrator_line": "Finally, the layers are closed and the posterior capsule is repaired to support a stable recovery.",
+      "citations": [
+        { "source_type": "procedure_plan_section", "pointer": "§5.7" },
+        { "source_type": "procedure_plan_section", "pointer": "§6.1" }
+      ],
+      "confidence_overlay": { "lo": 0.83, "hi": 0.95, "label": "High Confidence" }
+    }
+  ]
+}
