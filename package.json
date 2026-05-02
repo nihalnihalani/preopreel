@@ -25,6 +25,8 @@
     "probe:butterbase": "tsx scripts/probe_butterbase.ts",
     "phantom:plan": "python3 scripts/generate_phantom_plan.py",
     "render:explainer": "python3 scripts/render_demo_explainer.py",
+    "render:explainer:realistic": "python3 scripts/render_realistic_explainer.py",
+    "render:explainer:veo": "python3 scripts/upgrade_explainer_veo.py",
     "bb:migrate": "tsx butterbase/apply.ts"
   },
   "dependencies": {
