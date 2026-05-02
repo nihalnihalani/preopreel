@@ -43,3 +43,4 @@ data/logs/
 
 # omc tooling state
 .omc/
+data/local-db/
