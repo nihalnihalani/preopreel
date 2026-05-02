@@ -1,49 +1,45 @@
 // apps/synthesis-worker/persist.ts
 //
-// Butterbase write wrappers.
+// Butterbase write wrappers — thin adapters over @/lib/butterbase/client.
 //
 // Mara E.1 mitigation: critique + critic_score writes are FIRE-AND-FORGET
 // (Promise.allSettled with setImmediate deferral). This avoids 500ms write
 // latency stacking up on the critic-HUD beat (0:50–1:00) — the SSE trace
 // covers the gap so the HUD sees state immediately. All other writes
-// (forge_runs status, beats, audit_citations, finalize) are awaited.
-
-import type {
-  CriticCritique,
-  CriticScore,
-} from "@/lib/forge/critic";
-
-// ─── Lazy Butterbase client ────────────────────────────────────────────────
+// (forge_runs status, audit_citations) are awaited.
 //
-// The actual @/lib/butterbase/client module is owned by Butterbase Dev and
-// will land in parallel. We dynamic-import so this module compiles even if
-// the dependency hasn't been written yet — at runtime the worker validates
-// availability.
+// Status semantics: stages emit a wide `ForgeRunStatus` enum ("parsing",
+// "directing", "renderingVideo", etc.) which is the *stage cursor*, not
+// the row-level status. The DB has a narrow `ForgeRunStatusRow` (queued |
+// running | completed | failed | cancelled). We map terminal labels
+// ("done", "failed", "cancelled") to the row enum and route everything
+// else as `running` with the stage label tracked separately.
 
-interface ButterbaseClient {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  insert: (table: string, row: Record<string, unknown>) => Promise<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  update: (table: string, id: string, patch: Record<string, unknown>) => Promise<any>;
-}
+import type { ForgeRunStatus, ForgeRun } from "@/lib/forge/types";
+import type { ForgeRunStatusRow } from "@/lib/butterbase/types.gen";
+import {
+  persistForgeRun,
+  updateForgeRunStage,
+  updateForgeRunStatus,
+  persistShotList as bbPersistShotList,
+  persistAnatomyGraph as bbPersistAnatomyGraph,
+  persistCritique,
+  persistCriticScore,
+  persistAuditCitation,
+} from "@/lib/butterbase/client";
 
-let bbClient: ButterbaseClient | null = null;
+// ─── Status mapping ────────────────────────────────────────────────────────
 
-async function getBb(): Promise<ButterbaseClient | null> {
-  if (bbClient) return bbClient;
-  try {
-    // Butterbase Dev's module path. Resolved at runtime.
-    const mod = (await import("@/lib/butterbase/client")) as {
-      getButterbaseClient?: () => ButterbaseClient;
-      default?: ButterbaseClient;
-    };
-    bbClient =
-      mod.getButterbaseClient?.() ?? mod.default ?? null;
-    return bbClient;
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn("[persist] butterbase client unavailable", err);
-    return null;
+function rowStatusFor(stage: ForgeRunStatus): ForgeRunStatusRow {
+  switch (stage) {
+    case "done":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "pending":
+      return "queued";
+    default:
+      return "running";
   }
 }
 
@@ -51,64 +47,104 @@ async function getBb(): Promise<ButterbaseClient | null> {
 
 export async function persistForgeRunStart(
   forgeRunId: string,
-  patch: Record<string, unknown>,
+  patch: Partial<ForgeRun> = {},
 ): Promise<void> {
-  const bb = await getBb();
-  if (!bb) return;
-  await bb.update("forge_runs", forgeRunId, patch);
+  try {
+    await persistForgeRun({ id: forgeRunId, ...patch });
+  } catch (err) {
+    console.warn("[persist:forge_run_start] failed", err);
+  }
 }
 
+/**
+ * Called from each stage to advance the cursor. The wide `stage` arg is
+ * mapped to (row.status, row.stage). Terminal states ("done"/"failed")
+ * also write to the row-level status; intermediate states stay "running"
+ * while the stage label advances.
+ */
 export async function persistForgeRunStatus(
   forgeRunId: string,
-  status: string,
-  extra?: Record<string, unknown>,
+  stage: ForgeRunStatus,
+  extra?: { error?: string },
 ): Promise<void> {
-  const bb = await getBb();
-  if (!bb) return;
-  await bb.update("forge_runs", forgeRunId, {
-    status,
-    stage: status,
-    ...(extra ?? {}),
-  });
+  try {
+    await updateForgeRunStage(forgeRunId, stage);
+    const rowStatus = rowStatusFor(stage);
+    if (rowStatus !== "running") {
+      await updateForgeRunStatus(forgeRunId, rowStatus, extra?.error);
+    }
+  } catch (err) {
+    console.warn(`[persist:forge_run_status:${stage}] failed`, err);
+  }
 }
 
-export async function persistBeat(
+export async function persistStageBoundary(
   forgeRunId: string,
-  beat: Record<string, unknown>,
+  stage: string,
+  durationMs?: number,
+  costUsd?: number,
 ): Promise<void> {
-  const bb = await getBb();
-  if (!bb) return;
-  await bb.insert("beats", { forge_run_id: forgeRunId, ...beat });
+  try {
+    await updateForgeRunStage(forgeRunId, stage, durationMs, costUsd);
+  } catch (err) {
+    console.warn(`[persist:stage:${stage}] failed`, err);
+  }
 }
 
-export async function persistAuditCitation(
-  forgeRunId: string,
-  citation: Record<string, unknown>,
-): Promise<void> {
-  const bb = await getBb();
-  if (!bb) return;
-  await bb.insert("audit_citations", {
-    forge_run_id: forgeRunId,
-    ...citation,
-  });
-}
-
+/**
+ * Stage 03 writes `{ v: 1, shotList }` (Atlas draft); a future stage 04
+ * redraft would write `{ v: 2, shotList }` (atlas-after-mara). Map the
+ * version to the row's `created_by` enum.
+ */
 export async function persistShotList(
   forgeRunId: string,
-  shotList: Record<string, unknown>,
+  payload: { v?: number; shotList?: unknown } & Record<string, unknown>,
 ): Promise<void> {
-  const bb = await getBb();
-  if (!bb) return;
-  await bb.insert("shot_lists", { forge_run_id: forgeRunId, ...shotList });
+  const v = typeof payload.v === "number" ? payload.v : 1;
+  const inner = payload.shotList ?? payload;
+  const createdBy: "atlas" | "atlas-after-mara" =
+    v === 2 ? "atlas-after-mara" : "atlas";
+  try {
+    await bbPersistShotList(forgeRunId, inner, createdBy);
+  } catch (err) {
+    console.warn("[persist:shot_list] failed", err);
+  }
 }
 
 export async function persistAnatomyGraph(
   forgeRunId: string,
   graph: Record<string, unknown>,
 ): Promise<void> {
-  const bb = await getBb();
-  if (!bb) return;
-  await bb.insert("anatomy_graphs", { forge_run_id: forgeRunId, ...graph });
+  try {
+    await bbPersistAnatomyGraph(forgeRunId, graph as never);
+  } catch (err) {
+    console.warn("[persist:anatomy_graph] failed", err);
+  }
+}
+
+/**
+ * No-op stub. There is no `beats` table in the current Butterbase schema —
+ * per-beat metadata reaches the HUD via SSE trace events (see Stage 9) and
+ * is encoded in shot_lists + critic_scores rows. Kept as a stub so callers
+ * can be promoted to real persistence without changing call sites once a
+ * `beats` table lands.
+ */
+export async function persistBeat(
+  _forgeRunId: string,
+  _beat: Record<string, unknown>,
+): Promise<void> {
+  // intentionally empty — see jsdoc above
+}
+
+export async function persistAuditEntry(
+  forgeRunId: string,
+  entry: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await persistAuditCitation(forgeRunId, entry);
+  } catch (err) {
+    console.warn("[persist:audit_citation] failed", err);
+  }
 }
 
 // ─── Fire-and-forget writes (Mara E.1) ────────────────────────────────────
@@ -117,14 +153,10 @@ function deferredFireAndForget(
   fn: () => Promise<unknown>,
   label: string,
 ): void {
-  // setImmediate yields to the event loop so the worker stage can continue
-  // immediately. Promise.allSettled here is one-element but the shape
-  // matches the brief and lets us extend to batched persistence trivially.
   setImmediate(() => {
     Promise.allSettled([fn()]).then((results) => {
       for (const r of results) {
         if (r.status === "rejected") {
-          // eslint-disable-next-line no-console
           console.warn(`[persist:${label}] write failed (fire-and-forget)`, r.reason);
         }
       }
@@ -135,18 +167,17 @@ function deferredFireAndForget(
 /**
  * Persist Mara critiques for a ShotList — fire-and-forget. The HUD reads
  * via Butterbase realtime; the SSE trace event covers the gap.
+ *
+ * Accepts the loose `CriticCritique` shape from src/lib/forge/critic.ts
+ * (category: string) — `persistCritique` handles narrowing internally.
  */
 export function persistCritiquesAsync(
   forgeRunId: string,
-  critiques: CriticCritique[],
+  critiques: ReadonlyArray<unknown>,
 ): void {
   deferredFireAndForget(async () => {
-    const bb = await getBb();
-    if (!bb) return;
     await Promise.allSettled(
-      critiques.map((c) =>
-        bb.insert("critiques", { forge_run_id: forgeRunId, ...c }),
-      ),
+      critiques.map((c) => persistCritique(forgeRunId, c)),
     );
   }, "critiques");
 }
@@ -159,22 +190,18 @@ export function persistCritiquesAsync(
 export function persistCriticScoresAsync(
   forgeRunId: string,
   beatId: string,
-  attempts: CriticScore[],
-  accepted_with_low_score: boolean,
+  attempts: ReadonlyArray<unknown>,
+  acceptedWithLowScore: boolean,
 ): void {
   deferredFireAndForget(async () => {
-    const bb = await getBb();
-    if (!bb) return;
     await Promise.allSettled(
-      attempts.map((s, i) =>
-        bb.insert("critic_scores", {
-          forge_run_id: forgeRunId,
-          attempt: i + 1,
-          accepted_with_low_score: i === attempts.length - 1 && accepted_with_low_score,
-          ...s,
-          beat_id: beatId,
-        }),
-      ),
+      attempts.map((s, i) => {
+        const isFinal = i === attempts.length - 1;
+        const score = isFinal && acceptedWithLowScore
+          ? { ...(s as object), accepted: true, acceptedWithLowScore: true }
+          : s;
+        return persistCriticScore(forgeRunId, beatId, score, i + 1);
+      }),
     );
   }, "critic_scores");
 }
