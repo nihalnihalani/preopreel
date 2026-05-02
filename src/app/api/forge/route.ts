@@ -136,7 +136,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // re-clicks on the demo button.
     const forgeRunId = DEMO_FIXTURE_ID;
     await safeInsertRow(forgeRunId, demoMode);
-    await safeEnqueue(forgeRunId, "fixture");
+    // In replay mode every synthesis output is pre-baked on disk
+    // (explainer MP4, critic scores, audit PDF, fixtures). Running the
+    // worker would (a) burn Z.AI credits on every upload, (b) crash
+    // mid-pipeline because the live cache-keyed Seedream/anatomy-bible
+    // PNGs aren't pre-warmed (the legacy 07-seedream/shot_N.png
+    // fixtures use a different keying scheme than withReplay's sha256
+    // path), and (c) leave the run row at a non-terminal status so
+    // the page polls forever waiting for "done".
+    if (demoMode !== "replay") {
+      await safeEnqueue(forgeRunId, "fixture");
+    }
     const body: StartResult = { forge_run_id: forgeRunId };
     return NextResponse.json(body, { status: 202 });
   }
@@ -202,10 +212,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   await safeInsertRow(forgeRunId, demoMode);
-  // The worker picks up the job and reads inputs from Butterbase Storage.
-  // For now in dev: we leave the bytes in memory; the worker can fetch
-  // them via the queue's payload. Best-effort.
-  await safeEnqueue(forgeRunId, "upload");
+  // In replay mode skip the worker (see fixture-branch comment above —
+  // pre-baked output covers everything; running the worker just crashes
+  // partway through and overwrites the "done" status the local-store
+  // already holds).
+  if (demoMode !== "replay") {
+    // The worker picks up the job and reads inputs from Butterbase
+    // Storage. For now in dev: we leave the bytes in memory; the worker
+    // can fetch them via the queue's payload. Best-effort.
+    await safeEnqueue(forgeRunId, "upload");
+  }
 
   const body: StartResult = { forge_run_id: forgeRunId };
   return NextResponse.json(body, { status: 202 });
