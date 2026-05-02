@@ -392,6 +392,54 @@ export async function persistCriticScore(
 }
 
 // ============================================================================
+// Read accessors (drive the API routes)
+// ============================================================================
+//
+// /api/forge/[id]/{critique,critic,receipt}/route.ts dynamic-import these.
+// Names match the route guards (mod?.getCritiques, mod?.getCriticScores,
+// mod?.getAuditEntries). Without these exports the routes silently no-op
+// the DB path and serve disk fixtures (devil's-advocate B1, 2026-05-02).
+// In replay mode we skip Postgres entirely so the offline / no-DB path
+// stays clean — same shape as fetchFromButterbase in the [id] route.
+
+function isReplayMode(): boolean {
+  return (process.env.DEMO_MODE ?? "replay") === "replay";
+}
+
+export async function getCritiques(forgeRunId: string): Promise<CritiqueRow[]> {
+  if (isReplayMode()) return [];
+  const r = await query<CritiqueRow>(
+    `SELECT * FROM critiques WHERE forge_run_id = $1 ORDER BY created_at ASC`,
+    [forgeRunId],
+  );
+  return r.rows;
+}
+
+export async function getCriticScores(
+  forgeRunId: string,
+): Promise<CriticScoreRow[]> {
+  if (isReplayMode()) return [];
+  const r = await query<CriticScoreRow>(
+    `SELECT * FROM critic_scores
+       WHERE forge_run_id = $1
+       ORDER BY beat_id, regen_attempt`,
+    [forgeRunId],
+  );
+  return r.rows;
+}
+
+export async function getAuditEntries(
+  forgeRunId: string,
+): Promise<AuditCitationRow[]> {
+  if (isReplayMode()) return [];
+  const r = await query<AuditCitationRow>(
+    `SELECT * FROM audit_citations WHERE forge_run_id = $1 ORDER BY claim_id`,
+    [forgeRunId],
+  );
+  return r.rows;
+}
+
+// ============================================================================
 // Audit trail (Invariant 4)
 // ============================================================================
 
