@@ -1,15 +1,4 @@
 {
-  "mcpServers": {
-    "butterbase": {
-      "command": "npx",
-      "args": ["-y", "butterbase-mcp"],
-      "env": {
-        "BUTTERBASE_PROJECT_ID": "${BUTTERBASE_PROJECT_ID}",
-        "BUTTERBASE_API_KEY": "${BUTTERBASE_API_KEY}",
-        "BUTTERBASE_PROJECT_URL": "${BUTTERBASE_PROJECT_URL}",
-        "BUTTERBASE_PROMO_CODE": "BUTTERBASE0502",
-        "BUTTERBASE_SUBMISSION_CODE": "butterbase0502"
-      }
-    }
-  }
+  "mcpServers": {}
 }
+
