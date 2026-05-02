@@ -71,9 +71,13 @@ async function tryLoadSdk(): Promise<ButterbaseSdk | null> {
   if (_sdkChecked) return _sdk;
   _sdkChecked = true;
   try {
-    // Optional dependency. The pg fallback covers everything we need on day 1.
-    // @ts-expect-error — package may not be installed; we handle the failure.
-    const mod = await import("@butterbase/js");
+    // Optional dependency — the package isn't on npm yet (verified 2026-05-02).
+    // Hide the specifier behind a variable so Turbopack/webpack don't try to
+    // statically resolve it; the pg fallback covers everything we need.
+    const sdkSpecifier = ["@butter", "base/js"].join("");
+    // @ts-expect-error — runtime-only import; specifier is intentionally
+    // dynamic so the bundler skips static resolution.
+    const mod = await import(/* webpackIgnore: true */ /* @vite-ignore */ sdkSpecifier);
     _sdk = mod;
     return _sdk;
   } catch {

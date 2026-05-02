@@ -40,7 +40,13 @@ async function fromReplay(id: string): Promise<unknown[]> {
     );
     const buf = await fs.readFile(path, "utf-8");
     const json: unknown = JSON.parse(buf);
-    return Array.isArray(json) ? json : [];
+    if (Array.isArray(json)) return json;
+    // Fixture is wrapped: { forge_run_id, persona, beats: [...] }.
+    if (json && typeof json === "object" && "beats" in json) {
+      const inner = (json as { beats: unknown }).beats;
+      return Array.isArray(inner) ? inner : [];
+    }
+    return [];
   } catch {
     return [];
   }
@@ -52,9 +58,24 @@ export async function GET(
 ): Promise<NextResponse> {
   const { id } = await params;
   const raw = (await fromButterbase(id)) ?? (await fromReplay(id));
+  // Strip fields outside the strict CriticScore schema so .safeParse passes;
+  // fixtures carry extras (e.g. verdict) for human review.
+  const KNOWN = [
+    "beat_id",
+    "anatomical_fidelity",
+    "procedure_step_compliance",
+    "on_screen_text_violations",
+    "feedback",
+    "accepted_with_low_score",
+    "attempt",
+  ] as const;
   const validated: unknown[] = [];
   for (const item of raw) {
-    const parsed = CriticScore.safeParse(item);
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const stripped: Record<string, unknown> = {};
+    for (const k of KNOWN) if (k in o) stripped[k] = o[k];
+    const parsed = CriticScore.safeParse(stripped);
     if (parsed.success) validated.push(parsed.data);
   }
   return NextResponse.json(validated);
