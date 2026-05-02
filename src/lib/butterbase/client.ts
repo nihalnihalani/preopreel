@@ -271,8 +271,8 @@ export async function updateForgeRunStage(
   const { upsertLocalRun, getLocalRun } = await import("./local-store");
   const existing = await getLocalRun(id);
   if (existing) {
-    if (typeof durationMs === "number") existing.durationsMs[stage] = Math.round(durationMs);
-    if (typeof costUsd === "number") existing.costUsd[stage] = costUsd;
+    if (typeof durationMs === "number") existing.durationsMs[stage as keyof ForgeRun["durationsMs"]] = Math.round(durationMs);
+    if (typeof costUsd === "number") existing.costUsd[stage as keyof ForgeRun["costUsd"]] = costUsd;
     existing.stage = stage as ForgeRun["stage"];
     await upsertLocalRun(existing);
   }
