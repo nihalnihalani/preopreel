@@ -69,7 +69,10 @@ async function safeInsertRow(
   } catch (err) {
     console.warn("[api/forge] local-store write failed:", err);
   }
-  // Best-effort Postgres mirror via butterbase client.
+  // Best-effort Postgres mirror via butterbase client. Skipped entirely in
+  // replay mode — local-store is the source of truth and Postgres DNS may
+  // not resolve in offline / hermetic-demo environments.
+  if (demoMode === "replay") return;
   try {
     const mod = (await import("@/lib/butterbase/client").catch(() => null)) as
       | {
@@ -90,7 +93,8 @@ async function safeInsertRow(
       });
     }
   } catch (err) {
-    console.warn("[api/forge] butterbase persist failed (non-fatal):", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[api/forge] butterbase persist failed (non-fatal): ${msg}`);
   }
 }
 

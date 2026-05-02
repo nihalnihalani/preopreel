@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 for PORT in 3000 3001; do
-  PIDS="$( { lsof -ti tcp:${PORT} 2>/dev/null || true; } | tr '\n' ' ' | sed 's/ *$//')"
+  PIDS="$({ lsof -ti tcp:${PORT} 2>/dev/null || true; } | tr '\n' ' ' | sed 's/ *$//')"
   if [[ -n "${PIDS}" ]]; then
     echo "[run.sh] killing pid(s) on :${PORT}: ${PIDS}"
     kill -9 ${PIDS} 2>/dev/null || true
