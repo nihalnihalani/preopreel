@@ -403,7 +403,7 @@ export async function persistCriticScore(
 // stays clean — same shape as fetchFromButterbase in the [id] route.
 
 function isReplayMode(): boolean {
-  return (process.env.DEMO_MODE ?? "replay") === "replay";
+  return (process.env.DEMO_MODE ?? "live") === "replay";
 }
 
 export async function getCritiques(forgeRunId: string): Promise<CritiqueRow[]> {
@@ -640,7 +640,7 @@ export async function getForgeRun(
 ): Promise<ForgeRunWithDetails | null> {
   // In replay mode skip Postgres entirely; fall through to local-store below.
   let run: ForgeRunRow | undefined;
-  if ((process.env.DEMO_MODE ?? "replay") !== "replay") {
+  if ((process.env.DEMO_MODE ?? "live") !== "replay") {
     try {
       const runR = await query<ForgeRunRow>(
         `SELECT * FROM forge_runs WHERE id = $1 LIMIT 1`,

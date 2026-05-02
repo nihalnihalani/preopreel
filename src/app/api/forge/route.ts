@@ -101,7 +101,7 @@ async function safeInsertRow(
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
   const fixture = url.searchParams.get("fixture");
-  const demoMode = process.env.DEMO_MODE ?? "replay";
+  const demoMode = process.env.DEMO_MODE ?? "live";
 
   // ─── Fixture branch ──────────────────────────────────────────────
   if (fixture) {

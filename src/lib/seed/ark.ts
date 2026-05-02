@@ -295,7 +295,7 @@ export async function* arkChatStream(
 ): AsyncIterable<string> {
   // In replay mode, fall back to the cached non-streamed result and yield
   // it as a single chunk — the HUD doesn't care, since events are replayed.
-  if ((process.env.DEMO_MODE ?? "replay") === "replay") {
+  if ((process.env.DEMO_MODE ?? "live") === "replay") {
     const text = await arkChat<string>(opts);
     yield text;
     return;

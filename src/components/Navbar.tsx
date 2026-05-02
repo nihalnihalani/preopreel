@@ -27,7 +27,7 @@ const INVARIANTS = [
 ] as const;
 
 export function Navbar() {
-  const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE ?? "replay";
+  const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE ?? "live";
 
   return (
     <header className="sticky top-0 z-40 border-b border-ink-700/60 bg-ink-950/80 backdrop-blur supports-[backdrop-filter]:bg-ink-950/60">
