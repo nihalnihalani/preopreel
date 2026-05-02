@@ -3,7 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -15,22 +19,42 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "incremental": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "allowJs": false,
     "noEmit": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "paths": {
-      "@/*": ["./src/*"],
-      "@worker/*": ["./apps/synthesis-worker/*"],
-      "@bb/*": ["./butterbase/*"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@worker/*": [
+        "./apps/synthesis-worker/*"
+      ],
+      "@bb/*": [
+        "./butterbase/*"
+      ]
     },
-    "types": ["node", "vitest/globals"]
+    "types": [
+      "node",
+      "vitest/globals"
+    ]
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", ".next", "out", "dist", "data/replay/**/*.json"]
+  "exclude": [
+    "node_modules",
+    ".next",
+    "out",
+    "dist",
+    "data/replay/**/*.json"
+  ]
 }
