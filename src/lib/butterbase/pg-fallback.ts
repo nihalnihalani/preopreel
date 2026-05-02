@@ -37,6 +37,8 @@ export function butterbasePostgresDsn(): string {
 
   const projectUrl = process.env.BUTTERBASE_PROJECT_URL ?? "";
   const apiKey = process.env.BUTTERBASE_API_KEY ?? "";
+  const projectId = process.env.BUTTERBASE_PROJECT_ID ?? "";
+  
   if (!projectUrl || !apiKey) {
     throw new Error(
       "[butterbase/pg-fallback] BUTTERBASE_PROJECT_URL + BUTTERBASE_API_KEY required " +
@@ -44,8 +46,16 @@ export function butterbasePostgresDsn(): string {
         "Apply promo BUTTERBASE0502 in the dashboard, then copy keys.",
     );
   }
-  const host = projectUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  return `postgres://postgres:${encodeURIComponent(apiKey)}@db.${host}:5432/postgres?sslmode=require`;
+  
+  // Use BUTTERBASE_PROJECT_ID to construct the host if available, otherwise fallback to projectUrl parsing
+  let host = "";
+  if (projectId) {
+    host = `${projectId}.butterbase.dev`;
+  } else {
+    host = projectUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  }
+  const constructedDsn = `postgres://postgres:${encodeURIComponent(apiKey)}@db.${host}:5432/postgres?uselibpqcompat=true&sslmode=require`;
+  return constructedDsn;
 }
 
 /**
