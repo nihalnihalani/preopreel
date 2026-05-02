@@ -75,8 +75,8 @@ async function tryLoadSdk(): Promise<ButterbaseSdk | null> {
     // Hide the specifier behind a variable so Turbopack/webpack don't try to
     // statically resolve it; the pg fallback covers everything we need.
     const sdkSpecifier = ["@butter", "base/js"].join("");
-    // @ts-expect-error — runtime-only import; specifier is intentionally
-    // dynamic so the bundler skips static resolution.
+    // Runtime-only import; specifier is intentionally dynamic so the
+    // bundler skips static resolution.
     const mod = await import(/* webpackIgnore: true */ /* @vite-ignore */ sdkSpecifier);
     _sdk = mod;
     return _sdk;

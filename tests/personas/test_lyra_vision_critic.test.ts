@@ -8,6 +8,7 @@
 // first attempt anatomical_fidelity 0.71 → 0.86 after regen.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { LYRA_KNOWN_BAD } from "@/lib/forge/personas/__fixtures__/lyra-known-bad";
+import { withForgeRunContext } from "@/lib/tracing/als";
 import type { AnatomyGraph } from "@/lib/forge/anatomyGraph";
 import type { CriticScore } from "@/lib/forge/critique";
 import type { ShotBeat } from "@/lib/forge/shotList";
@@ -108,13 +109,19 @@ describe("Lyra — Vision Critic (5 known-bad rendered shots)", () => {
         arkChat: vi.fn(),
         arkVision: vi.fn(async () => mockScore),
       }));
+      vi.doMock("@/lib/seed/zai", () => ({
+        zaiChat: vi.fn(),
+        zaiVision: vi.fn(async () => mockScore),
+      }));
       const { invoke } = await import("@/lib/forge/personas/lyra");
 
-      const score = await invoke({
-        beat: fx.beat,
-        anatomyGraph: DEMO_ANATOMY_GRAPH,
-        frames: FOUR_FRAMES,
-      });
+      const score = await withForgeRunContext(`test-lyra-${fx.name}`, () =>
+        invoke({
+          beat: fx.beat,
+          anatomyGraph: DEMO_ANATOMY_GRAPH,
+          frames: FOUR_FRAMES,
+        }),
+      );
 
       // The critic loop's decision rule, replicated: regen if
       //   min(anatomical_fidelity, procedure_step_compliance) < 0.75
@@ -146,25 +153,32 @@ describe("Lyra — Vision Critic (5 known-bad rendered shots)", () => {
   }
 
   it("rejects fewer than 4 frames with a clear error (not silent garbage)", async () => {
+    const okScore = {
+      beat_id: "beat-03-reaming",
+      anatomical_fidelity: 0.9,
+      procedure_step_compliance: 0.9,
+      on_screen_text_violations: 0,
+      feedback: "ok",
+    };
     vi.doMock("@/lib/seed/ark", () => ({
       arkChat: vi.fn(),
-      arkVision: vi.fn(async () => ({
-        beat_id: "beat-03-reaming",
-        anatomical_fidelity: 0.9,
-        procedure_step_compliance: 0.9,
-        on_screen_text_violations: 0,
-        feedback: "ok",
-      })),
+      arkVision: vi.fn(async () => okScore),
+    }));
+    vi.doMock("@/lib/seed/zai", () => ({
+      zaiChat: vi.fn(),
+      zaiVision: vi.fn(async () => okScore),
     }));
     const { invoke } = await import("@/lib/forge/personas/lyra");
     const fx = LYRA_KNOWN_BAD[0];
     expect(fx).toBeDefined();
     await expect(
-      invoke({
-        beat: fx!.beat,
-        anatomyGraph: DEMO_ANATOMY_GRAPH,
-        frames: [TINY_PNG_B64, TINY_PNG_B64], // only 2 — should throw
-      }),
+      withForgeRunContext("test-lyra-frames-validation", () =>
+        invoke({
+          beat: fx!.beat,
+          anatomyGraph: DEMO_ANATOMY_GRAPH,
+          frames: [TINY_PNG_B64, TINY_PNG_B64], // only 2 — should throw
+        }),
+      ),
     ).rejects.toThrow(/exactly 4 frames/i);
   });
 

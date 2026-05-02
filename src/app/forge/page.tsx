@@ -42,7 +42,6 @@ function ForgePageInner() {
         console.error("[forge] auto-start failed:", err);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo, autoStarted]);
 
   const onStarted = (forgeRunId: string) => {

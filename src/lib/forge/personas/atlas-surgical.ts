@@ -15,6 +15,7 @@ import type { Patient, Procedure, AnatomyGraph } from "@/lib/forge/anatomyGraph"
 import type { ShotList } from "@/lib/forge/shotList";
 import type { Citation } from "@/lib/forge/types";
 import { ShotList as ShotListSchema } from "@/lib/forge/shotList";
+import { logger, withLogging } from "@/lib/logging/logger";
 
 export const ATLAS_TEMPERATURE = 0.3;
 
@@ -202,6 +203,19 @@ export interface AtlasDirectorInput {
  * collaborator files are not yet on disk at module-load time.
  */
 export async function invoke(input: AtlasDirectorInput): Promise<ShotList> {
+  return withLogging(
+    logger.child({ persona: "atlas", stage: "03-director" }),
+    "atlas.invoke",
+    () => _invoke(input),
+    {
+      patientId: input.patient.id,
+      procedureId: input.procedure.id,
+      landmarks: input.anatomyGraph.landmarks.length,
+    },
+  );
+}
+
+async function _invoke(input: AtlasDirectorInput): Promise<ShotList> {
   const allowlistBlock = buildImperativeAllowlistBlock(input.imperativeAllowlist);
   const systemPrompt = SYSTEM_PROMPT.replace(
     "{{IMPERATIVE_ALLOWLIST}}",

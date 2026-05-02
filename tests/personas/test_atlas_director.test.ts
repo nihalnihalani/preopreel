@@ -12,6 +12,7 @@ import {
   buildImperativeAllowlistBlock,
   type ImperativeAllowlistItem,
 } from "@/lib/forge/personas/atlas-surgical";
+import { withForgeRunContext } from "@/lib/tracing/als";
 import type { ShotList } from "@/lib/forge/shotList";
 import { ShotList as ShotListSchema } from "@/lib/forge/shotList";
 import type {
@@ -264,6 +265,10 @@ beforeEach(() => {
     arkChat: vi.fn(async () => MOCK_SHOTLIST),
     arkVision: vi.fn(async () => ({})),
   }));
+  vi.doMock("@/lib/seed/zai", () => ({
+    zaiChat: vi.fn(async () => MOCK_SHOTLIST),
+    zaiVision: vi.fn(async () => ({})),
+  }));
 });
 
 describe("Atlas — Director", () => {
@@ -271,13 +276,15 @@ describe("Atlas — Director", () => {
     // Re-import after vi.doMock takes effect.
     const { invoke } = await import("@/lib/forge/personas/atlas-surgical");
 
-    const list = await invoke({
-      patient: DEMO_PATIENT,
-      procedure: DEMO_PROCEDURE,
-      anatomyGraph: DEMO_ANATOMY_GRAPH,
-      protocolCache: DEMO_PROTOCOL_CACHE,
-      imperativeAllowlist: DEMO_ALLOWLIST,
-    });
+    const list = await withForgeRunContext("test-atlas-shotlist", () =>
+      invoke({
+        patient: DEMO_PATIENT,
+        procedure: DEMO_PROCEDURE,
+        anatomyGraph: DEMO_ANATOMY_GRAPH,
+        protocolCache: DEMO_PROTOCOL_CACHE,
+        imperativeAllowlist: DEMO_ALLOWLIST,
+      }),
+    );
 
     // Schema parse round-trip (defensive).
     const parsed = ShotListSchema.parse(list);
@@ -307,13 +314,15 @@ describe("Atlas — Director", () => {
 
   it("FK-validates procedureStepId and anatomicalFocus", async () => {
     const { invoke } = await import("@/lib/forge/personas/atlas-surgical");
-    const list = await invoke({
-      patient: DEMO_PATIENT,
-      procedure: DEMO_PROCEDURE,
-      anatomyGraph: DEMO_ANATOMY_GRAPH,
-      protocolCache: DEMO_PROTOCOL_CACHE,
-      imperativeAllowlist: DEMO_ALLOWLIST,
-    });
+    const list = await withForgeRunContext("test-atlas-fk", () =>
+      invoke({
+        patient: DEMO_PATIENT,
+        procedure: DEMO_PROCEDURE,
+        anatomyGraph: DEMO_ANATOMY_GRAPH,
+        protocolCache: DEMO_PROTOCOL_CACHE,
+        imperativeAllowlist: DEMO_ALLOWLIST,
+      }),
+    );
     const stepIds = new Set(DEMO_PROCEDURE.surgicalSteps.map((s) => s.id));
     const lmIds = new Set(DEMO_ANATOMY_GRAPH.landmarks.map((l) => l.id));
     for (const b of list.beats) {

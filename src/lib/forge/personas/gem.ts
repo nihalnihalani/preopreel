@@ -10,6 +10,7 @@
 // (anatomyGraph.ts) further refuses lo === hi to keep Gem honest.
 import type { Patient, Procedure, AnatomyGraph } from "@/lib/forge/anatomyGraph";
 import { AnatomyGraph as AnatomyGraphSchema } from "@/lib/forge/anatomyGraph";
+import { logger, withLogging } from "@/lib/logging/logger";
 
 export const GEM_TEMPERATURE = 0.2;
 
@@ -162,6 +163,17 @@ export interface GeminiVisionJsonOpts {
  * hermetic-replay rule still applies (Mara C.3).
  */
 export async function invoke(
+  input: GemAnatomyExtractInput,
+): Promise<AnatomyGraph> {
+  return withLogging(
+    logger.child({ persona: "gem", stage: "02-research" }),
+    "gem.invoke",
+    () => _invoke(input),
+    { patientId: input.patient.id, pages: input.pageImages.length },
+  );
+}
+
+async function _invoke(
   input: GemAnatomyExtractInput,
 ): Promise<AnatomyGraph> {
   // Lazy imports — keeps this module loadable before the ingestor

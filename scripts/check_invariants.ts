@@ -158,7 +158,7 @@ async function gate3ReplayScan(): Promise<void> {
     for (const v of sf.getVariableStatements()) {
       if (!v.isExported()) continue;
       const text = v.getText();
-      if (!/=\s*async\s*[\(<]/.test(text)) continue;
+      if (!/=\s*async\s*[(<]/.test(text)) continue;
       const decl = v.getDeclarations()[0];
       if (!decl) continue;
       exportedAsync.push({ name: decl.getName(), text });
